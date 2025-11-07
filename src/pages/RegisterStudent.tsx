@@ -1,0 +1,306 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { toast } from "sonner";
+import { Pencil, Trash2, Save, X } from "lucide-react";
+
+interface Student {
+  id: string;
+  name: string;
+  grade: string;
+  school_name: string;
+  parent_name: string;
+  contact_number: string;
+}
+
+export default function RegisterStudent() {
+  const queryClient = useQueryClient();
+  const [formData, setFormData] = useState({
+    name: "",
+    grade: "",
+    school_name: "",
+    parent_name: "",
+    contact_number: "",
+  });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editData, setEditData] = useState<Student | null>(null);
+
+  const { data: students, isLoading } = useQuery({
+    queryKey: ["students"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("students")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as Student[];
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (student: typeof formData) => {
+      const { error } = await supabase.from("students").insert([student]);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      setFormData({
+        name: "",
+        grade: "",
+        school_name: "",
+        parent_name: "",
+        contact_number: "",
+      });
+      toast.success("Student registered successfully!");
+    },
+    onError: () => {
+      toast.error("Failed to register student");
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (student: Student) => {
+      const { error } = await supabase
+        .from("students")
+        .update({
+          name: student.name,
+          grade: student.grade,
+          school_name: student.school_name,
+          parent_name: student.parent_name,
+          contact_number: student.contact_number,
+        })
+        .eq("id", student.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      setEditingId(null);
+      setEditData(null);
+      toast.success("Student updated successfully!");
+    },
+    onError: () => {
+      toast.error("Failed to update student");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("students").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      toast.success("Student deleted successfully!");
+    },
+    onError: () => {
+      toast.error("Failed to delete student");
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    createMutation.mutate(formData);
+  };
+
+  const handleEdit = (student: Student) => {
+    setEditingId(student.id);
+    setEditData({ ...student });
+  };
+
+  const handleSave = () => {
+    if (editData) {
+      updateMutation.mutate(editData);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditingId(null);
+    setEditData(null);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-3xl font-bold tracking-tight">Register Student</h2>
+        <p className="text-muted-foreground">Add new students to the attendance system</p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Student Information</CardTitle>
+          <CardDescription>Fill in the details to register a new student</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="name">Full Name *</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="grade">Grade *</Label>
+                <Input
+                  id="grade"
+                  value={formData.grade}
+                  onChange={(e) => setFormData({ ...formData, grade: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="school_name">School Name *</Label>
+                <Input
+                  id="school_name"
+                  value={formData.school_name}
+                  onChange={(e) => setFormData({ ...formData, school_name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="parent_name">Parent's Name *</Label>
+                <Input
+                  id="parent_name"
+                  value={formData.parent_name}
+                  onChange={(e) => setFormData({ ...formData, parent_name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contact_number">Contact Number *</Label>
+                <Input
+                  id="contact_number"
+                  value={formData.contact_number}
+                  onChange={(e) => setFormData({ ...formData, contact_number: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+            <Button type="submit" className="w-full md:w-auto">
+              Register Student
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Registered Students</CardTitle>
+          <CardDescription>Manage your student records</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <p>Loading students...</p>
+          ) : students && students.length > 0 ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Grade</TableHead>
+                    <TableHead>School</TableHead>
+                    <TableHead>Parent</TableHead>
+                    <TableHead>Contact</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {students.map((student) => (
+                    <TableRow key={student.id}>
+                      {editingId === student.id && editData ? (
+                        <>
+                          <TableCell>
+                            <Input
+                              value={editData.name}
+                              onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={editData.grade}
+                              onChange={(e) => setEditData({ ...editData, grade: e.target.value })}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={editData.school_name}
+                              onChange={(e) =>
+                                setEditData({ ...editData, school_name: e.target.value })
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={editData.parent_name}
+                              onChange={(e) =>
+                                setEditData({ ...editData, parent_name: e.target.value })
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={editData.contact_number}
+                              onChange={(e) =>
+                                setEditData({ ...editData, contact_number: e.target.value })
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button size="sm" onClick={handleSave}>
+                                <Save className="h-4 w-4" />
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={handleCancel}>
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </>
+                      ) : (
+                        <>
+                          <TableCell className="font-medium">{student.name}</TableCell>
+                          <TableCell>{student.grade}</TableCell>
+                          <TableCell>{student.school_name}</TableCell>
+                          <TableCell>{student.parent_name}</TableCell>
+                          <TableCell>{student.contact_number}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleEdit(student)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => deleteMutation.mutate(student.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <p className="text-center text-muted-foreground">No students registered yet</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
