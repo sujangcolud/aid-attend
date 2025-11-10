@@ -22,6 +22,9 @@ export default function ChaptersTracking() {
   const [notes, setNotes] = useState("");
   const [filterSubject, setFilterSubject] = useState("all");
   const [filterStudent, setFilterStudent] = useState("all");
+  const [selectedChapterId, setSelectedChapterId] = useState("");
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   // Fetch students
   const { data: students = [] } = useQuery({
