@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Shield, Power, PowerOff } from 'lucide-react';
+import { Plus, Shield, Power, PowerOff, Edit } from 'lucide-react';
 
 const AdminDashboard = () => {
   const { user } = useAuth();
