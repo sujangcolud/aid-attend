@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,12 +16,10 @@ interface Student {
   school_name: string;
   parent_name: string;
   contact_number: string;
-  center_id: string;
 }
 
 export default function RegisterStudent() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
   const [formData, setFormData] = useState({
     name: "",
     grade: "",
@@ -34,19 +31,12 @@ export default function RegisterStudent() {
   const [editData, setEditData] = useState<Student | null>(null);
 
   const { data: students, isLoading } = useQuery({
-    queryKey: ["students", user?.center_id],
+    queryKey: ["students"],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from("students")
         .select("*")
         .order("created_at", { ascending: false });
-      
-      // Filter by center_id if user is not admin
-      if (user?.role !== 'admin' && user?.center_id) {
-        query = query.eq('center_id', user.center_id);
-      }
-      
-      const { data, error } = await query;
       if (error) throw error;
       return data as Student[];
     },
@@ -54,14 +44,11 @@ export default function RegisterStudent() {
 
   const createMutation = useMutation({
     mutationFn: async (student: typeof formData) => {
-      const { error } = await supabase.from("students").insert([{
-        ...student,
-        center_id: user?.center_id
-      }]);
+      const { error } = await supabase.from("students").insert([student]);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["students", user?.center_id] });
+      queryClient.invalidateQueries({ queryKey: ["students"] });
       setFormData({
         name: "",
         grade: "",
@@ -91,7 +78,7 @@ export default function RegisterStudent() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["students", user?.center_id] });
+      queryClient.invalidateQueries({ queryKey: ["students"] });
       setEditingId(null);
       setEditData(null);
       toast.success("Student updated successfully!");
@@ -107,7 +94,7 @@ export default function RegisterStudent() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["students", user?.center_id] });
+      queryClient.invalidateQueries({ queryKey: ["students"] });
       toast.success("Student deleted successfully!");
     },
     onError: () => {

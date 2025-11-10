@@ -1,19 +1,1 @@
 project_id = "qipsjjanellqbzvjrkol"
-
-[functions.auth-login]
-verify_jwt = false
-
-[functions.admin-create-center]
-verify_jwt = false
-
-[functions.init-admin]
-verify_jwt = false
-
-[functions.ai-grade-answer]
-verify_jwt = false
-
-[functions.ai-generate-insights]
-verify_jwt = false
-
-[functions.ai-student-summary]
-verify_jwt = false
