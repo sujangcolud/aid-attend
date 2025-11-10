@@ -150,6 +150,27 @@ const AdminDashboard = () => {
     createCenterMutation.mutate();
   };
 
+  const handleOpenEditDialog = (center: any) => {
+    setEditingCenter(center);
+    setEditedCenterData({
+      centerName: center.center_name,
+      address: center.address || ''
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdateCenter = () => {
+    if (!editedCenterData.centerName) {
+      toast({
+        title: 'Missing fields',
+        description: 'Center name is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+    updateCenterMutation.mutate();
+  };
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto">
