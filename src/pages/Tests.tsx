@@ -206,9 +206,50 @@ export default function Tests() {
   };
 
   const selectedTestData = tests.find((t) => t.id === selectedTest);
+  const testsWithFiles = tests.filter((t) => t.uploaded_file_url);
 
   return (
     <div className="space-y-6">
+      {testsWithFiles.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Available Question Papers
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {testsWithFiles.map((test) => (
+                <div
+                  key={test.id}
+                  className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-start gap-3 flex-1">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 flex-shrink-0">
+                        <FileText className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-semibold text-sm line-clamp-2">{test.name}</h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {test.subject} • {format(new Date(test.date), "MMM d, yyyy")}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <QuestionPaperViewer
+                    testId={test.id}
+                    testName={test.name}
+                    fileName={test.uploaded_file_url}
+                  />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Test Management</h1>
         <div className="flex gap-2">
