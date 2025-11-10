@@ -9,6 +9,7 @@ import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import RegisterStudent from "./pages/RegisterStudent";
 import TakeAttendance from "./pages/TakeAttendance";
+import AttendanceSummary from "./pages/AttendanceSummary";
 import ChaptersTracking from "./pages/ChaptersTracking";
 import Tests from "./pages/Tests";
 import StudentReport from "./pages/StudentReport";
