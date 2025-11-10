@@ -1,20 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.80.0';
+import * as bcrypt from 'bcrypt';
 
-// Helper function to verify password using native crypto
+// Helper function to verify password using bcrypt
 async function verifyPassword(password: string, hash: string): Promise<boolean> {
   try {
-    // For now, use simple comparison - in production, implement proper bcrypt verification
-    // or use a compatible library. This is a temporary fix.
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const computedHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    
-    // Since we can't use bcrypt.compare, we'll need to update passwords
-    // For now, check if the hash matches a simple SHA-256 or compare directly
-    return hash === computedHash || hash === password; // Temporary: allow plain password
+    return await bcrypt.compare(password, hash);
   } catch (error) {
     console.error('Password verification error:', error);
     return false;
