@@ -8,12 +8,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { FileUp, Plus, Trash2, Edit, Users, X, FileText } from "lucide-react";
+import { FileUp, Plus, Trash2, Edit, Users } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import OCRModal from "@/components/OCRModal";
 import BulkMarksEntry from "@/components/BulkMarksEntry";
-import QuestionPaperViewer from "@/components/QuestionPaperViewer";
 
 export default function Tests() {
   const queryClient = useQueryClient();
@@ -82,18 +81,18 @@ export default function Tests() {
   // Create test mutation
   const createTestMutation = useMutation({
     mutationFn: async () => {
-      let uploadedFileUrl = null;
-
+      let fileUrl = null;
+      
       // Upload file if present
       if (uploadedFile) {
         const fileExt = uploadedFile.name.split(".").pop();
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const fileName = `${Date.now()}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
           .from("test-files")
           .upload(fileName, uploadedFile);
-
+        
         if (uploadError) throw uploadError;
-        uploadedFileUrl = fileName;
+        fileUrl = fileName;
       }
 
       const { data, error } = await supabase.from("tests").insert({
@@ -102,9 +101,8 @@ export default function Tests() {
         date: testDate,
         total_marks: parseInt(totalMarks),
         grade: grade || null,
-        uploaded_file_url: uploadedFileUrl,
       }).select().single();
-
+      
       if (error) throw error;
       return data;
     },
@@ -118,8 +116,7 @@ export default function Tests() {
       setGrade("");
       setUploadedFile(null);
     },
-    onError: (error: any) => {
-      console.error("Error creating test:", error);
+    onError: () => {
       toast.error("Failed to create test");
     },
   });
@@ -206,50 +203,9 @@ export default function Tests() {
   };
 
   const selectedTestData = tests.find((t) => t.id === selectedTest);
-  const testsWithFiles = tests.filter((t) => t.uploaded_file_url);
 
   return (
     <div className="space-y-6">
-      {testsWithFiles.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Available Question Papers
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {testsWithFiles.map((test) => (
-                <div
-                  key={test.id}
-                  className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-start gap-3 flex-1">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 flex-shrink-0">
-                        <FileText className="h-5 w-5 text-blue-600" />
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="font-semibold text-sm line-clamp-2">{test.name}</h3>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {test.subject} • {format(new Date(test.date), "MMM d, yyyy")}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <QuestionPaperViewer
-                    testId={test.id}
-                    testName={test.name}
-                    fileName={test.uploaded_file_url}
-                  />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Test Management</h1>
         <div className="flex gap-2">
@@ -439,39 +395,6 @@ export default function Tests() {
           </Card>
         )}
       </div>
-
-      {selectedTest && selectedTestData && selectedTestData.uploaded_file_url && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Question Paper
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-100">
-                    <FileText className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">Question Paper Available</p>
-                    <p className="text-sm text-gray-600">
-                      Uploaded: {format(new Date(selectedTestData.created_at), "PPP")}
-                    </p>
-                  </div>
-                </div>
-                <QuestionPaperViewer
-                  testId={selectedTest}
-                  testName={selectedTestData.name}
-                  fileName={selectedTestData.uploaded_file_url}
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {selectedTest && testResults.length > 0 && (
         <Card>
