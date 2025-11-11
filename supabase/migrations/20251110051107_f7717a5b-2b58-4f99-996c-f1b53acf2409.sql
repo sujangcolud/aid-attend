@@ -76,8 +76,5 @@ CREATE INDEX IF NOT EXISTS idx_tests_center ON public.tests(center_id);
 CREATE INDEX IF NOT EXISTS idx_chapter_teachings_chapter ON public.chapter_teachings(chapter_id);
 CREATE INDEX IF NOT EXISTS idx_chapter_teachings_date ON public.chapter_teachings(date);
 
--- Insert default admin user (password: precioussn - hashed with bcrypt)
--- Note: This is a placeholder hash, you'll need to hash the actual password
-INSERT INTO public.users (username, password_hash, role, center_id, is_active)
-VALUES ('sujan1nepal@gmail.com', '$2a$10$placeholder_hash_replace_this', 'admin', NULL, true)
-ON CONFLICT (username) DO NOTHING;
+-- Note: Admin user is created via the init-admin Edge Function which properly hashes the password
+-- Do not insert placeholder data here as invalid hashes will cause authentication failures

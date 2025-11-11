@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,14 +9,16 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { FileUp, Plus, Trash2, Edit, Users } from "lucide-react";
+import { FileUp, Plus, Trash2, Edit, Users, X, FileText } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import OCRModal from "@/components/OCRModal";
 import BulkMarksEntry from "@/components/BulkMarksEntry";
+import QuestionPaperViewer from "@/components/QuestionPaperViewer";
 
 export default function Tests() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [isAddingTest, setIsAddingTest] = useState(false);
   const [selectedTest, setSelectedTest] = useState<string>("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -38,12 +41,19 @@ export default function Tests() {
 
   // Fetch tests
   const { data: tests = [] } = useQuery({
-    queryKey: ["tests"],
+    queryKey: ["tests", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("tests")
         .select("*")
         .order("date", { ascending: false });
+      
+      // Filter by center_id if user is not admin
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+      
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
@@ -51,12 +61,19 @@ export default function Tests() {
 
   // Fetch students
   const { data: students = [] } = useQuery({
-    queryKey: ["students"],
+    queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("students")
         .select("*")
         .order("name");
+      
+      // Filter by center_id if user is not admin
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+      
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
@@ -81,18 +98,18 @@ export default function Tests() {
   // Create test mutation
   const createTestMutation = useMutation({
     mutationFn: async () => {
-      let fileUrl = null;
-      
+      let uploadedFileUrl = null;
+
       // Upload file if present
       if (uploadedFile) {
         const fileExt = uploadedFile.name.split(".").pop();
-        const fileName = `${Date.now()}.${fileExt}`;
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
           .from("test-files")
           .upload(fileName, uploadedFile);
-        
+
         if (uploadError) throw uploadError;
-        fileUrl = fileName;
+        uploadedFileUrl = fileName;
       }
 
       const { data, error } = await supabase.from("tests").insert({
@@ -101,8 +118,10 @@ export default function Tests() {
         date: testDate,
         total_marks: parseInt(totalMarks),
         grade: grade || null,
+        uploaded_file_url: uploadedFileUrl,
+        center_id: user?.center_id, // Attach center_id
       }).select().single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -116,7 +135,8 @@ export default function Tests() {
       setGrade("");
       setUploadedFile(null);
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Error creating test:", error);
       toast.error("Failed to create test");
     },
   });
@@ -196,6 +216,48 @@ export default function Tests() {
     },
   });
 
+  // Delete test mutation
+  const deleteTestMutation = useMutation({
+    mutationFn: async (testId: string) => {
+      const test = tests.find(t => t.id === testId);
+      if (!test) throw new Error("Test not found");
+      
+      // Check permissions: Admin can delete any test, Center can only delete their own
+      if (user?.role !== 'admin' && test.center_id !== user?.center_id) {
+        throw new Error("You don't have permission to delete this test");
+      }
+
+      // Delete associated file if exists
+      if (test.uploaded_file_url) {
+        await supabase.storage
+          .from("test-files")
+          .remove([test.uploaded_file_url]);
+      }
+
+      // Delete test results first (cascade)
+      await supabase
+        .from("test_results")
+        .delete()
+        .eq("test_id", testId);
+
+      // Delete the test
+      const { error } = await supabase
+        .from("tests")
+        .delete()
+        .eq("id", testId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tests"] });
+      setSelectedTest("");
+      toast.success("Test deleted successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to delete test");
+    },
+  });
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setUploadedFile(e.target.files[0]);
@@ -203,9 +265,50 @@ export default function Tests() {
   };
 
   const selectedTestData = tests.find((t) => t.id === selectedTest);
+  const testsWithFiles = tests.filter((t) => t.uploaded_file_url);
 
   return (
     <div className="space-y-6">
+      {testsWithFiles.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Available Question Papers
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {testsWithFiles.map((test) => (
+                <div
+                  key={test.id}
+                  className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-start gap-3 flex-1">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 flex-shrink-0">
+                        <FileText className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-semibold text-sm line-clamp-2">{test.name}</h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {test.subject} • {format(new Date(test.date), "MMM d, yyyy")}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <QuestionPaperViewer
+                    testId={test.id}
+                    testName={test.name}
+                    fileName={test.uploaded_file_url}
+                  />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Test Management</h1>
         <div className="flex gap-2">
@@ -302,20 +405,38 @@ export default function Tests() {
           <CardContent>
             <div className="space-y-2">
               {tests.map((test) => (
-                <button
+                <div
                   key={test.id}
-                  onClick={() => setSelectedTest(test.id)}
-                  className={`w-full text-left p-4 border rounded-lg transition-colors ${
-                    selectedTest === test.id
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-accent"
+                  className={`flex items-center gap-2 ${
+                    selectedTest === test.id ? "" : ""
                   }`}
                 >
-                  <div className="font-medium">{test.name}</div>
-                  <div className="text-sm opacity-80">
-                    {test.subject} • {format(new Date(test.date), "PPP")} • {test.total_marks} marks
-                  </div>
-                </button>
+                  <button
+                    onClick={() => setSelectedTest(test.id)}
+                    className={`flex-1 text-left p-4 border rounded-lg transition-colors ${
+                      selectedTest === test.id
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-accent"
+                    }`}
+                  >
+                    <div className="font-medium">{test.name}</div>
+                    <div className="text-sm opacity-80">
+                      {test.subject} • {format(new Date(test.date), "PPP")} • {test.total_marks} marks
+                    </div>
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm(`Are you sure you want to delete "${test.name}"? This will also delete all associated student results.`)) {
+                        deleteTestMutation.mutate(test.id);
+                      }
+                    }}
+                    title="Delete test"
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
               ))}
               {tests.length === 0 && (
                 <p className="text-muted-foreground text-center py-8">
@@ -395,6 +516,39 @@ export default function Tests() {
           </Card>
         )}
       </div>
+
+      {selectedTest && selectedTestData && selectedTestData.uploaded_file_url && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Question Paper
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-100">
+                    <FileText className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Question Paper Available</p>
+                    <p className="text-sm text-gray-600">
+                      Uploaded: {format(new Date(selectedTestData.created_at), "PPP")}
+                    </p>
+                  </div>
+                </div>
+                <QuestionPaperViewer
+                  testId={selectedTest}
+                  testName={selectedTestData.name}
+                  fileName={selectedTestData.uploaded_file_url}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {selectedTest && testResults.length > 0 && (
         <Card>

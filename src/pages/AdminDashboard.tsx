@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Shield, Power, PowerOff } from 'lucide-react';
+import { Plus, Shield, Power, PowerOff, Edit } from 'lucide-react';
 
 const AdminDashboard = () => {
   const { user } = useAuth();
@@ -18,6 +18,12 @@ const AdminDashboard = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingCenter, setEditingCenter] = useState<any>(null);
+  const [editedCenterData, setEditedCenterData] = useState({
+    centerName: '',
+    address: ''
+  });
   const [newCenter, setNewCenter] = useState({
     centerName: '',
     address: '',
@@ -101,6 +107,37 @@ const AdminDashboard = () => {
     }
   });
 
+  // Update center mutation
+  const updateCenterMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from('centers')
+        .update({
+          center_name: editedCenterData.centerName,
+          address: editedCenterData.address
+        })
+        .eq('id', editingCenter.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Center updated',
+        description: 'Center details have been updated successfully',
+      });
+      setIsEditDialogOpen(false);
+      setEditingCenter(null);
+      queryClient.invalidateQueries({ queryKey: ['centers-with-users'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Failed to update center',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  });
+
   const handleCreateCenter = () => {
     if (!newCenter.centerName || !newCenter.username || !newCenter.password) {
       toast({
@@ -111,6 +148,27 @@ const AdminDashboard = () => {
       return;
     }
     createCenterMutation.mutate();
+  };
+
+  const handleOpenEditDialog = (center: any) => {
+    setEditingCenter(center);
+    setEditedCenterData({
+      centerName: center.center_name,
+      address: center.address || ''
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdateCenter = () => {
+    if (!editedCenterData.centerName) {
+      toast({
+        title: 'Missing fields',
+        description: 'Center name is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+    updateCenterMutation.mutate();
   };
 
   return (
@@ -190,6 +248,40 @@ const AdminDashboard = () => {
           </Dialog>
         </div>
 
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Center</DialogTitle>
+              <DialogDescription>
+                Update center name and address
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="editCenterName">Center Name *</Label>
+                <Input
+                  id="editCenterName"
+                  value={editedCenterData.centerName}
+                  onChange={(e) => setEditedCenterData({ ...editedCenterData, centerName: e.target.value })}
+                  placeholder="Enter center name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editAddress">Address</Label>
+                <Input
+                  id="editAddress"
+                  value={editedCenterData.address}
+                  onChange={(e) => setEditedCenterData({ ...editedCenterData, address: e.target.value })}
+                  placeholder="Enter address"
+                />
+              </div>
+              <Button onClick={handleUpdateCenter} disabled={updateCenterMutation.isPending} className="w-full">
+                {updateCenterMutation.isPending ? 'Updating...' : 'Update Center'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <Card>
           <CardHeader>
             <CardTitle>All Centers</CardTitle>
@@ -234,22 +326,31 @@ const AdminDashboard = () => {
                           )}
                         </TableCell>
                         <TableCell>
-                          {centerUser && (
+                          <div className="flex gap-2">
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => toggleStatusMutation.mutate({
-                                userId: centerUser.id,
-                                isActive: centerUser.is_active
-                              })}
+                              onClick={() => handleOpenEditDialog(center)}
                             >
-                              {centerUser.is_active ? (
-                                <><PowerOff className="h-4 w-4 mr-1" /> Deactivate</>
-                              ) : (
-                                <><Power className="h-4 w-4 mr-1" /> Activate</>
-                              )}
+                              <Edit className="h-4 w-4 mr-1" /> Edit
                             </Button>
-                          )}
+                            {centerUser && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleStatusMutation.mutate({
+                                  userId: centerUser.id,
+                                  isActive: centerUser.is_active
+                                })}
+                              >
+                                {centerUser.is_active ? (
+                                  <><PowerOff className="h-4 w-4 mr-1" /> Deactivate</>
+                                ) : (
+                                  <><Power className="h-4 w-4 mr-1" /> Activate</>
+                                )}
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

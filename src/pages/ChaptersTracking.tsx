@@ -8,8 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Trash2, Users } from "lucide-react";
+import { Trash2, Users, Plus } from "lucide-react";
 import { format } from "date-fns";
 
 export default function ChaptersTracking() {
@@ -21,6 +22,9 @@ export default function ChaptersTracking() {
   const [notes, setNotes] = useState("");
   const [filterSubject, setFilterSubject] = useState("all");
   const [filterStudent, setFilterStudent] = useState("all");
+  const [selectedChapterId, setSelectedChapterId] = useState("");
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   // Fetch students
   const { data: students = [] } = useQuery({
@@ -35,7 +39,7 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Fetch chapters with students
+  // Fetch all chapters taught (history)
   const { data: chapters = [] } = useQuery({
     queryKey: ["chapters", filterSubject, filterStudent],
     queryFn: async () => {
@@ -43,71 +47,123 @@ export default function ChaptersTracking() {
         .from("chapters")
         .select("*, student_chapters(*, students(name, grade))")
         .order("date_taught", { ascending: false });
-      
+
       if (filterSubject !== "all") {
         query = query.eq("subject", filterSubject);
       }
-      
+
       const { data, error } = await query;
       if (error) throw error;
-      
+
       // Filter by student if needed
       if (filterStudent !== "all") {
-        return data.filter(chapter => 
+        return data.filter(chapter =>
           chapter.student_chapters.some((sc: any) => sc.student_id === filterStudent)
         );
       }
-      
+
       return data;
+    },
+  });
+
+  // Fetch unique chapters (master list) for selection
+  const { data: uniqueChapters = [] } = useQuery({
+    queryKey: ["unique-chapters"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("chapters")
+        .select("id, subject, chapter_name")
+        .order("subject, chapter_name");
+
+      if (error) throw error;
+
+      // Remove duplicates by creating a map
+      const seen = new Set<string>();
+      const unique = [];
+      for (const chapter of data) {
+        const key = `${chapter.subject}|${chapter.chapter_name}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          unique.push(chapter);
+        }
+      }
+      return unique;
     },
   });
 
   // Add chapter mutation with multi-student support
   const addChapterMutation = useMutation({
     mutationFn: async () => {
-      // First, create the chapter
-      const { data: chapterData, error: chapterError } = await supabase
-        .from("chapters")
-        .insert({
-          subject,
-          chapter_name: chapterName,
-          date_taught: date,
-          notes: notes || null,
-        })
-        .select()
-        .single();
-      
-      if (chapterError) throw chapterError;
-      
-      // Then, link to selected students
+      let chapterId: string;
+
+      if (isCreatingNew) {
+        // Create new chapter
+        const { data: chapterData, error: chapterError } = await supabase
+          .from("chapters")
+          .insert({
+            subject,
+            chapter_name: chapterName,
+            date_taught: date,
+            notes: notes || null,
+          })
+          .select()
+          .single();
+
+        if (chapterError) throw chapterError;
+        chapterId = chapterData.id;
+      } else if (selectedChapterId) {
+        // Use selected chapter - create a new instance with the selected date
+        const selectedChapter = uniqueChapters.find(c => c.id === selectedChapterId);
+        if (!selectedChapter) throw new Error("Chapter not found");
+
+        const { data: chapterData, error: chapterError } = await supabase
+          .from("chapters")
+          .insert({
+            subject: selectedChapter.subject,
+            chapter_name: selectedChapter.chapter_name,
+            date_taught: date,
+            notes: notes || null,
+          })
+          .select()
+          .single();
+
+        if (chapterError) throw chapterError;
+        chapterId = chapterData.id;
+      } else {
+        throw new Error("Please select a chapter or create a new one");
+      }
+
+      // Link to selected students
       const studentChapters = selectedStudentIds.map(studentId => ({
         student_id: studentId,
-        chapter_id: chapterData.id,
+        chapter_id: chapterId,
         completed: true,
         date_completed: date,
       }));
-      
+
       const { error: linkError } = await supabase
         .from("student_chapters")
         .insert(studentChapters);
-      
+
       if (linkError) throw linkError;
-      
-      return chapterData;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
+      queryClient.invalidateQueries({ queryKey: ["unique-chapters"] });
       toast.success("Chapter recorded for selected students");
       setSelectedStudentIds([]);
       setSubject("");
       setChapterName("");
       setNotes("");
+      setSelectedChapterId("");
+      setIsCreatingNew(false);
+      setIsDialogOpen(false);
     },
     onError: (error: any) => {
       if (error.code === "23505") {
-        toast.error("Chapter already assigned to one or more selected students");
+        toast.error("Chapter already assigned to one or more selected students on this date");
       } else {
-        toast.error("Failed to record chapter");
+        toast.error(error.message || "Failed to record chapter");
       }
     },
   });
@@ -144,96 +200,177 @@ export default function ChaptersTracking() {
   // Get unique subjects
   const subjects = Array.from(new Set(chapters.map(c => c.subject)));
 
+  const uniqueSubjects = Array.from(new Set(uniqueChapters.map(c => c.subject)));
+  const filteredChapters = selectedChapterId === ""
+    ? uniqueChapters
+    : uniqueChapters.filter(c => c.id === selectedChapterId);
+
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Chapters Tracking</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Chapters Tracking</h1>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Record Chapter
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Record Chapter</DialogTitle>
+              <DialogDescription>
+                Select a previously taught chapter or create a new one
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Date</Label>
+                <Input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                />
+              </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Record Chapter</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label>Date</Label>
-            <Input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </div>
+              <div className="space-y-3 border rounded-lg p-4 bg-muted/50">
+                <Label className="text-base font-semibold">Select from Previous Chapters</Label>
+                {uniqueChapters.length > 0 ? (
+                  <Select value={selectedChapterId} onValueChange={setSelectedChapterId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a chapter..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {uniqueChapters.map((chapter) => (
+                        <SelectItem key={chapter.id} value={chapter.id}>
+                          {chapter.subject} - {chapter.chapter_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No previous chapters found. Create a new one below.</p>
+                )}
+              </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Subject</Label>
-              <Input
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                placeholder="e.g., Mathematics"
-              />
-            </div>
-            <div>
-              <Label>Chapter Name</Label>
-              <Input
-                value={chapterName}
-                onChange={(e) => setChapterName(e.target.value)}
-                placeholder="e.g., Algebra"
-              />
-            </div>
-          </div>
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">Or</span>
+                </div>
+              </div>
 
-          <div>
-            <Label>Notes (Optional)</Label>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Additional notes..."
-              rows={2}
-            />
-          </div>
+              {isCreatingNew && (
+                <div className="space-y-3 border rounded-lg p-4">
+                  <Label className="text-base font-semibold">Create New Chapter</Label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Subject</Label>
+                      <Input
+                        value={subject}
+                        onChange={(e) => setSubject(e.target.value)}
+                        placeholder="e.g., Mathematics"
+                      />
+                    </div>
+                    <div>
+                      <Label>Chapter Name</Label>
+                      <Input
+                        value={chapterName}
+                        onChange={(e) => setChapterName(e.target.value)}
+                        placeholder="e.g., Algebra"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="flex items-center gap-2">
-                <Users className="h-4 w-4" />
-                Select Students ({selectedStudentIds.length} selected)
-              </Label>
+              {!isCreatingNew && selectedChapterId === "" && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setIsCreatingNew(true)}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create New Chapter
+                </Button>
+              )}
+
+              {isCreatingNew && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setIsCreatingNew(false);
+                    setSubject("");
+                    setChapterName("");
+                  }}
+                >
+                  Back to Selection
+                </Button>
+              )}
+
+              <div>
+                <Label>Notes (Optional)</Label>
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Additional notes..."
+                  rows={2}
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Select Students ({selectedStudentIds.length} selected)
+                  </Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={selectAllStudents}
+                  >
+                    Select All
+                  </Button>
+                </div>
+                <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
+                  {students.map((student) => (
+                    <div key={student.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={student.id}
+                        checked={selectedStudentIds.includes(student.id)}
+                        onCheckedChange={() => toggleStudentSelection(student.id)}
+                      />
+                      <label
+                        htmlFor={student.id}
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                      >
+                        {student.name} - Grade {student.grade}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={selectAllStudents}
+                onClick={() => addChapterMutation.mutate()}
+                disabled={
+                  selectedStudentIds.length === 0 ||
+                  (isCreatingNew && (!subject || !chapterName)) ||
+                  (!isCreatingNew && !selectedChapterId) ||
+                  addChapterMutation.isPending
+                }
+                className="w-full"
               >
-                Select All
+                Record Chapter for {selectedStudentIds.length} Student(s)
               </Button>
             </div>
-            <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
-              {students.map((student) => (
-                <div key={student.id} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={student.id}
-                    checked={selectedStudentIds.includes(student.id)}
-                    onCheckedChange={() => toggleStudentSelection(student.id)}
-                  />
-                  <label
-                    htmlFor={student.id}
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                  >
-                    {student.name} - Grade {student.grade}
-                  </label>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <Button
-            onClick={() => addChapterMutation.mutate()}
-            disabled={selectedStudentIds.length === 0 || !subject || !chapterName || addChapterMutation.isPending}
-            className="w-full"
-          >
-            Record Chapter for {selectedStudentIds.length} Student(s)
-          </Button>
-        </CardContent>
-      </Card>
+          </DialogContent>
+        </Dialog>
+      </div>
 
       <Card>
         <CardHeader>

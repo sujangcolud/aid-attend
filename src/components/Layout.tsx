@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Home, UserPlus, CheckSquare, FileText, BarChart3, BookOpen, ClipboardCheck, User, Brain, LogOut, Shield } from "lucide-react";
+import { Home, UserPlus, CheckSquare, FileText, BarChart3, BookOpen, ClipboardCheck, User, Brain, LogOut, Shield, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ const navItems = [
   { to: "/", label: "Dashboard", icon: Home },
   { to: "/register", label: "Register Student", icon: UserPlus },
   { to: "/attendance", label: "Take Attendance", icon: CheckSquare },
+  { to: "/attendance-summary", label: "Attendance Summary", icon: Calendar },
   { to: "/chapters", label: "Chapters Tracking", icon: BookOpen },
   { to: "/tests", label: "Tests", icon: ClipboardCheck },
   { to: "/student-report", label: "Student Report", icon: User },
