@@ -1,9 +1,23 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.80.0';
-import * as bcrypt from 'bcrypt';
+let bcrypt: any;
 
 // Helper function to verify password using bcrypt
 async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  if (!bcrypt) {
+    try {
+      bcrypt = await import('bcrypt');
+    } catch (error) {
+      console.warn('bcrypt failed to load, falling back to bcryptjs', error);
+      try {
+        bcrypt = await import('npm:bcryptjs@2.4.3');
+      } catch (e) {
+        console.error('Failed to import bcrypt or bcryptjs:', e);
+        return false;
+      }
+    }
+  }
+
   try {
     return await bcrypt.compare(password, hash);
   } catch (error) {
