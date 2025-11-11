@@ -1,5 +1,5 @@
 {
   "imports": {
-    "bcrypt": "https://deno.land/x/bcrypt@v0.4.1/src/bcrypt.ts"
+    "bcrypt": "npm:bcrypt@5.1.1"
   }
 }
