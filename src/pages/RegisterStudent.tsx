@@ -8,8 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Pencil, Trash2, Save, X, UserPlus } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Pencil, Trash2, Save, X } from "lucide-react";
 
 interface Student {
   id: string;
@@ -33,10 +32,6 @@ export default function RegisterStudent() {
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Student | null>(null);
-  const [isCreatingParent, setIsCreatingParent] = useState(false);
-  const [selectedStudentForParent, setSelectedStudentForParent] = useState<Student | null>(null);
-  const [parentUsername, setParentUsername] = useState("");
-  const [parentPassword, setParentPassword] = useState("");
 
   const { data: students, isLoading } = useQuery({
     queryKey: ["students", user?.center_id],
@@ -141,43 +136,6 @@ export default function RegisterStudent() {
     setEditData(null);
   };
 
-  // Create parent account mutation
-  const createParentMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedStudentForParent) return;
-      
-      const { data, error } = await supabase.functions.invoke('create-parent-account', {
-        body: {
-          username: parentUsername,
-          password: parentPassword,
-          studentId: selectedStudentForParent.id,
-          centerId: user?.center_id
-        }
-      });
-
-      if (error) throw error;
-      if (!data.success) throw new Error(data.error);
-      return data;
-    },
-    onSuccess: () => {
-      toast.success("Parent account created successfully");
-      setIsCreatingParent(false);
-      setSelectedStudentForParent(null);
-      setParentUsername("");
-      setParentPassword("");
-    },
-    onError: (error: any) => {
-      toast.error(error.message || "Failed to create parent account");
-    }
-  });
-
-  const handleCreateParentAccount = (student: Student) => {
-    setSelectedStudentForParent(student);
-    setParentUsername("");
-    setParentPassword("");
-    setIsCreatingParent(true);
-  };
-
   return (
     <div className="space-y-6">
       <div>
@@ -264,7 +222,7 @@ export default function RegisterStudent() {
                     <TableHead>School</TableHead>
                     <TableHead>Parent</TableHead>
                     <TableHead>Contact</TableHead>
-                    <TableHead className="text-right" style={{ minWidth: '200px' }}>Actions</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -332,23 +290,13 @@ export default function RegisterStudent() {
                                 size="sm"
                                 variant="outline"
                                 onClick={() => handleEdit(student)}
-                                title="Edit student"
                               >
                                 <Pencil className="h-4 w-4" />
                               </Button>
                               <Button
                                 size="sm"
-                                variant="secondary"
-                                onClick={() => handleCreateParentAccount(student)}
-                                title="Create parent login"
-                              >
-                                <UserPlus className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                size="sm"
                                 variant="destructive"
                                 onClick={() => deleteMutation.mutate(student.id)}
-                                title="Delete student"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -366,46 +314,6 @@ export default function RegisterStudent() {
           )}
         </CardContent>
       </Card>
-
-      {/* Parent Account Creation Dialog */}
-      <Dialog open={isCreatingParent} onOpenChange={setIsCreatingParent}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create Parent Login</DialogTitle>
-            <DialogDescription>
-              Create login credentials for {selectedStudentForParent?.name}'s parent
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="parent-username">Username (Email or Phone) *</Label>
-              <Input
-                id="parent-username"
-                value={parentUsername}
-                onChange={(e) => setParentUsername(e.target.value)}
-                placeholder="parent@email.com or 9841234567"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="parent-password">Temporary Password *</Label>
-              <Input
-                id="parent-password"
-                type="password"
-                value={parentPassword}
-                onChange={(e) => setParentPassword(e.target.value)}
-                placeholder="Enter temporary password"
-              />
-            </div>
-            <Button 
-              onClick={() => createParentMutation.mutate()} 
-              disabled={!parentUsername || !parentPassword || createParentMutation.isPending}
-              className="w-full"
-            >
-              {createParentMutation.isPending ? 'Creating...' : 'Create Parent Account'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

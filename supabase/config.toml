@@ -9,9 +9,6 @@ verify_jwt = false
 [functions.init-admin]
 verify_jwt = false
 
-[functions.create-parent-account]
-verify_jwt = false
-
 [functions.ai-grade-answer]
 verify_jwt = false
 

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -19,25 +18,17 @@ interface AttendanceStats {
 }
 
 export default function AttendanceSummary() {
-  const { user } = useAuth();
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [selectedStudent, setSelectedStudent] = useState('all');
 
   // Fetch all students
   const { data: students = [] } = useQuery({
-    queryKey: ['students', user?.center_id],
+    queryKey: ['students'],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from('students')
         .select('id, name, grade')
         .order('name');
-      
-      // Filter by center_id if user is not admin
-      if (user?.role !== 'admin' && user?.center_id) {
-        query = query.eq('center_id', user.center_id);
-      }
-      
-      const { data, error } = await query;
       if (error) throw error;
       return data;
     },

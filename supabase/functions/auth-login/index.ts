@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.80.0';
-import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
+import * as bcrypt from 'bcrypt';
 
 // Helper function to verify password using bcrypt
 async function verifyPassword(password: string, hash: string): Promise<boolean> {
@@ -39,7 +39,7 @@ serve(async (req) => {
     // Fetch user by username
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('*, centers(center_name), students(name)')
+      .select('*, centers(center_name)')
       .eq('username', username)
       .eq('is_active', true)
       .single();
@@ -79,9 +79,7 @@ serve(async (req) => {
       username: user.username,
       role: user.role,
       center_id: user.center_id,
-      center_name: user.centers?.center_name || null,
-      student_id: user.student_id,
-      student_name: user.students?.name || null
+      center_name: user.centers?.center_name || null
     };
 
     return new Response(

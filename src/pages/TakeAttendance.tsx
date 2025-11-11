@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -29,26 +28,18 @@ interface AttendanceRecord {
 
 export default function TakeAttendance() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [attendance, setAttendance] = useState<Record<string, AttendanceRecord>>({});
 
   const dateStr = format(selectedDate, "yyyy-MM-dd");
 
   const { data: students } = useQuery({
-    queryKey: ["students", user?.center_id],
+    queryKey: ["students"],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from("students")
         .select("id, name, grade")
         .order("name");
-      
-      // Filter by center_id if user is not admin
-      if (user?.role !== 'admin' && user?.center_id) {
-        query = query.eq('center_id', user.center_id);
-      }
-      
-      const { data, error } = await query;
       if (error) throw error;
       return data as Student[];
     },

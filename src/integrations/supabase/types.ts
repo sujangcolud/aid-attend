@@ -412,7 +412,6 @@ export type Database = {
           last_login: string | null
           password_hash: string
           role: Database["public"]["Enums"]["app_role"]
-          student_id: string | null
           username: string
         }
         Insert: {
@@ -423,7 +422,6 @@ export type Database = {
           last_login?: string | null
           password_hash: string
           role?: Database["public"]["Enums"]["app_role"]
-          student_id?: string | null
           username: string
         }
         Update: {
@@ -434,7 +432,6 @@ export type Database = {
           last_login?: string | null
           password_hash?: string
           role?: Database["public"]["Enums"]["app_role"]
-          student_id?: string | null
           username?: string
         }
         Relationships: [
@@ -443,13 +440,6 @@ export type Database = {
             columns: ["center_id"]
             isOneToOne: false
             referencedRelation: "centers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "users_student_id_fkey"
-            columns: ["student_id"]
-            isOneToOne: false
-            referencedRelation: "students"
             referencedColumns: ["id"]
           },
         ]
@@ -462,7 +452,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      app_role: "admin" | "center" | "parent"
+      app_role: "admin" | "center"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -590,7 +580,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "center", "parent"],
+      app_role: ["admin", "center"],
     },
   },
 } as const

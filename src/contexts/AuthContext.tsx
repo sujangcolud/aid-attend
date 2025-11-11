@@ -4,11 +4,9 @@ import { supabase } from '@/integrations/supabase/client';
 interface User {
   id: string;
   username: string;
-  role: 'admin' | 'center' | 'parent';
+  role: 'admin' | 'center';
   center_id: string | null;
   center_name?: string;
-  student_id?: string | null;
-  student_name?: string | null;
 }
 
 interface AuthContextType {

@@ -18,9 +18,7 @@ import ViewRecords from "./pages/ViewRecords";
 import Summary from "./pages/Summary";
 import Login from "./pages/Login";
 import AdminLogin from "./pages/AdminLogin";
-import ParentLogin from "./pages/ParentLogin";
 import AdminDashboard from "./pages/AdminDashboard";
-import ParentDashboard from "./pages/ParentDashboard";
 import InitAdmin from "./pages/InitAdmin";
 import NotFound from "./pages/NotFound";
 
@@ -37,8 +35,6 @@ const App = () => (
             <Route path="/init-admin" element={<InitAdmin />} />
             <Route path="/login" element={<Login />} />
             <Route path="/login-admin" element={<AdminLogin />} />
-            <Route path="/login-parent" element={<ParentLogin />} />
-            <Route path="/parent-dashboard" element={<ProtectedRoute><ParentDashboard /></ProtectedRoute>} />
             <Route path="/" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
             <Route path="/register" element={<ProtectedRoute><Layout><RegisterStudent /></Layout></ProtectedRoute>} />
             <Route path="/attendance" element={<ProtectedRoute><Layout><TakeAttendance /></Layout></ProtectedRoute>} />
