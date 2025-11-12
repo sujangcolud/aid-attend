@@ -3,6 +3,9 @@ project_id = "qipsjjanellqbzvjrkol"
 [functions.auth-login]
 verify_jwt = false
 
+[functions.auth-parent]
+verify_jwt = false
+
 [functions.admin-create-center]
 verify_jwt = false
 
