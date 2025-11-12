@@ -22,8 +22,10 @@ serve(async (req) => {
 
   try {
     const { username, password, studentId, centerId } = await req.json();
+    console.log('Create parent account request:', { username, studentId, centerId });
 
     if (!username || !password || !studentId || !centerId) {
+      console.error('Missing required fields:', { username: !!username, password: !!password, studentId: !!studentId, centerId: !!centerId });
       return new Response(
         JSON.stringify({ success: false, error: 'All fields are required' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
@@ -42,29 +44,55 @@ serve(async (req) => {
       .single();
 
     if (existingUser) {
+      console.error('Username already exists:', username);
       return new Response(
         JSON.stringify({ success: false, error: 'Username already exists' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
       );
     }
 
-    // Verify student exists and belongs to the center
+    // Verify student exists (with more flexible center_id check)
     const { data: student, error: studentError } = await supabase
       .from('students')
-      .select('id, center_id')
+      .select('id, center_id, name')
       .eq('id', studentId)
-      .eq('center_id', centerId)
       .single();
 
     if (studentError || !student) {
+      console.error('Student not found:', studentId, studentError);
       return new Response(
-        JSON.stringify({ success: false, error: 'Student not found or access denied' }),
+        JSON.stringify({ success: false, error: 'Student not found' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 }
+      );
+    }
+
+    console.log('Student found:', { id: student.id, name: student.name, center_id: student.center_id });
+
+    // If student's center_id is NULL, update it to the provided centerId
+    if (!student.center_id) {
+      console.log('Student has NULL center_id, updating to:', centerId);
+      const { error: updateError } = await supabase
+        .from('students')
+        .update({ center_id: centerId })
+        .eq('id', studentId);
+
+      if (updateError) {
+        console.error('Failed to update student center_id:', updateError);
+        throw new Error('Failed to assign student to center');
+      }
+      console.log('Student center_id updated successfully');
+    } else if (student.center_id !== centerId) {
+      // If student belongs to a different center, deny access
+      console.error('Student belongs to different center:', { student_center: student.center_id, requested_center: centerId });
+      return new Response(
+        JSON.stringify({ success: false, error: 'Student belongs to a different tuition center' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 }
       );
     }
 
     // Hash the password
     const passwordHash = await hashPassword(password);
+    console.log('Password hashed successfully');
 
     // Create parent user
     const { data: parentUser, error } = await supabase
@@ -80,9 +108,12 @@ serve(async (req) => {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Failed to create parent user:', error);
+      throw error;
+    }
 
-    console.log('Parent user created successfully for student:', studentId);
+    console.log('Parent user created successfully:', { userId: parentUser.id, username: parentUser.username, studentId });
 
     return new Response(
       JSON.stringify({ 
