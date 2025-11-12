@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,7 @@ import QuestionPaperViewer from "@/components/QuestionPaperViewer";
 
 export default function Tests() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [isAddingTest, setIsAddingTest] = useState(false);
   const [selectedTest, setSelectedTest] = useState<string>("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -39,12 +41,19 @@ export default function Tests() {
 
   // Fetch tests
   const { data: tests = [] } = useQuery({
-    queryKey: ["tests"],
+    queryKey: ["tests", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("tests")
         .select("*")
         .order("date", { ascending: false });
+      
+      // Filter by center_id if user is not admin
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+      
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
@@ -52,12 +61,19 @@ export default function Tests() {
 
   // Fetch students
   const { data: students = [] } = useQuery({
-    queryKey: ["students"],
+    queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("students")
         .select("*")
         .order("name");
+      
+      // Filter by center_id if user is not admin
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+      
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
@@ -103,6 +119,7 @@ export default function Tests() {
         total_marks: parseInt(totalMarks),
         grade: grade || null,
         uploaded_file_url: uploadedFileUrl,
+        center_id: user?.center_id, // Attach center_id
       }).select().single();
 
       if (error) throw error;
@@ -196,6 +213,48 @@ export default function Tests() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["test-results"] });
       toast.success("Result deleted");
+    },
+  });
+
+  // Delete test mutation
+  const deleteTestMutation = useMutation({
+    mutationFn: async (testId: string) => {
+      const test = tests.find(t => t.id === testId);
+      if (!test) throw new Error("Test not found");
+      
+      // Check permissions: Admin can delete any test, Center can only delete their own
+      if (user?.role !== 'admin' && test.center_id !== user?.center_id) {
+        throw new Error("You don't have permission to delete this test");
+      }
+
+      // Delete associated file if exists
+      if (test.uploaded_file_url) {
+        await supabase.storage
+          .from("test-files")
+          .remove([test.uploaded_file_url]);
+      }
+
+      // Delete test results first (cascade)
+      await supabase
+        .from("test_results")
+        .delete()
+        .eq("test_id", testId);
+
+      // Delete the test
+      const { error } = await supabase
+        .from("tests")
+        .delete()
+        .eq("id", testId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tests"] });
+      setSelectedTest("");
+      toast.success("Test deleted successfully");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to delete test");
     },
   });
 
@@ -346,20 +405,38 @@ export default function Tests() {
           <CardContent>
             <div className="space-y-2">
               {tests.map((test) => (
-                <button
+                <div
                   key={test.id}
-                  onClick={() => setSelectedTest(test.id)}
-                  className={`w-full text-left p-4 border rounded-lg transition-colors ${
-                    selectedTest === test.id
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-accent"
+                  className={`flex items-center gap-2 ${
+                    selectedTest === test.id ? "" : ""
                   }`}
                 >
-                  <div className="font-medium">{test.name}</div>
-                  <div className="text-sm opacity-80">
-                    {test.subject} • {format(new Date(test.date), "PPP")} • {test.total_marks} marks
-                  </div>
-                </button>
+                  <button
+                    onClick={() => setSelectedTest(test.id)}
+                    className={`flex-1 text-left p-4 border rounded-lg transition-colors ${
+                      selectedTest === test.id
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-accent"
+                    }`}
+                  >
+                    <div className="font-medium">{test.name}</div>
+                    <div className="text-sm opacity-80">
+                      {test.subject} • {format(new Date(test.date), "PPP")} • {test.total_marks} marks
+                    </div>
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm(`Are you sure you want to delete "${test.name}"? This will also delete all associated student results.`)) {
+                        deleteTestMutation.mutate(test.id);
+                      }
+                    }}
+                    title="Delete test"
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
               ))}
               {tests.length === 0 && (
                 <p className="text-muted-foreground text-center py-8">

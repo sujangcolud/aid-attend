@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -21,24 +22,43 @@ interface StudentSummary {
 }
 
 export default function Summary() {
+  const { user } = useAuth();
   const [gradeFilter, setGradeFilter] = useState<string>("all");
 
   const { data: students } = useQuery({
-    queryKey: ["students"],
+    queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase.from("students").select("*").order("name");
+      let query = supabase
+        .from("students")
+        .select("*")
+        .order("name");
+      
+      // Filter by center_id if user is not admin
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+      
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
   });
 
   const { data: allAttendance } = useQuery({
-    queryKey: ["all-attendance"],
+    queryKey: ["all-attendance", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase.from("attendance").select("*");
+      // Get student IDs for this center first
+      const studentIds = students?.map(s => s.id) || [];
+      if (studentIds.length === 0) return [];
+
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("*")
+        .in("student_id", studentIds);
       if (error) throw error;
       return data;
     },
+    enabled: (students?.length || 0) > 0,
   });
 
   const grades = [...new Set(students?.map((s) => s.grade) || [])];

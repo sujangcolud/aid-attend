@@ -1,25 +1,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.80.0';
-let bcrypt: any;
 
-// Helper function to verify password using bcrypt
+// Helper function to hash password using Web Crypto API
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Helper function to verify password
 async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  if (!bcrypt) {
-    try {
-      bcrypt = await import('bcrypt');
-    } catch (error) {
-      console.warn('bcrypt failed to load, falling back to bcryptjs', error);
-      try {
-        bcrypt = await import('npm:bcryptjs@2.4.3');
-      } catch (e) {
-        console.error('Failed to import bcrypt or bcryptjs:', e);
-        return false;
-      }
-    }
-  }
-
   try {
-    return await bcrypt.compare(password, hash);
+    const passwordHash = await hashPassword(password);
+    return passwordHash === hash;
   } catch (error) {
     console.error('Password verification error:', error);
     return false;
@@ -62,7 +57,7 @@ serve(async (req) => {
     // Fetch user by username
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('*, centers(center_name)')
+      .select('*, centers(center_name), students(name)')
       .eq('username', username)
       .eq('is_active', true)
       .single();
@@ -79,6 +74,9 @@ serve(async (req) => {
     console.log('User found:', user.username, 'Role:', user.role);
 
     // Verify password
+    const passwordHash = await hashPassword(password);
+    console.log('Generated hash:', passwordHash);
+    console.log('Stored hash:', user.password_hash);
     const passwordMatch = await verifyPassword(password, user.password_hash);
     console.log('Password match result:', passwordMatch);
     
@@ -102,7 +100,9 @@ serve(async (req) => {
       username: user.username,
       role: user.role,
       center_id: user.center_id,
-      center_name: user.centers?.center_name || null
+      center_name: user.centers?.center_name || null,
+      student_id: user.student_id,
+      student_name: user.students?.name || null
     };
 
     return new Response(
