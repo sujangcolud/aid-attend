@@ -82,13 +82,19 @@ export default function ChaptersTracking() {
 
   // Fetch unique chapters (master list) for selection
   const { data: uniqueChapters = [] } = useQuery({
-    queryKey: ["unique-chapters"],
+    queryKey: ["unique-chapters", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("chapters")
         .select("id, subject, chapter_name")
         .order("subject, chapter_name");
 
+      // Filter by center_id if user is not admin
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
 
       // Remove duplicates by creating a map
