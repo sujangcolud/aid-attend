@@ -65,6 +65,9 @@ serve(async (req) => {
     console.log('User found:', user.username, 'Role:', user.role);
 
     // Verify password
+    const passwordHash = await hashPassword(password);
+    console.log('Generated hash:', passwordHash);
+    console.log('Stored hash:', user.password_hash);
     const passwordMatch = await verifyPassword(password, user.password_hash);
     console.log('Password match result:', passwordMatch);
     
