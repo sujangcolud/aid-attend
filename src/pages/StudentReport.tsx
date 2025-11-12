@@ -83,11 +83,18 @@ export default function StudentReport() {
 
   // Fetch all chapters for progress calculation
   const { data: allChapters = [] } = useQuery({
-    queryKey: ["all-chapters"],
+    queryKey: ["all-chapters", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("chapters")
         .select("*");
+
+      // Filter by center_id if user is not admin
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
