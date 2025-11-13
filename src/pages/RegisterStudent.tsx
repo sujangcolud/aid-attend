@@ -19,6 +19,8 @@ interface Student {
   parent_name: string;
   contact_number: string;
   center_id: string;
+  monthly_fee?: number;
+  joining_date?: string;
 }
 
 export default function RegisterStudent() {
@@ -30,6 +32,8 @@ export default function RegisterStudent() {
     school_name: "",
     parent_name: "",
     contact_number: "",
+    monthly_fee: "",
+    joining_date: "",
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Student | null>(null);
@@ -61,7 +65,8 @@ export default function RegisterStudent() {
     mutationFn: async (student: typeof formData) => {
       const { error } = await supabase.from("students").insert([{
         ...student,
-        center_id: user?.center_id
+        center_id: user?.center_id,
+        monthly_fee: student.monthly_fee ? parseInt(student.monthly_fee, 10) : undefined,
       }]);
       if (error) throw error;
     },
@@ -73,6 +78,8 @@ export default function RegisterStudent() {
         school_name: "",
         parent_name: "",
         contact_number: "",
+        monthly_fee: "",
+        joining_date: "",
       });
       toast.success("Student registered successfully!");
     },
@@ -91,6 +98,8 @@ export default function RegisterStudent() {
           school_name: student.school_name,
           parent_name: student.parent_name,
           contact_number: student.contact_number,
+          monthly_fee: student.monthly_fee ? Number(student.monthly_fee) : null,
+          joining_date: student.joining_date,
         })
         .eq("id", student.id);
       if (error) throw error;
@@ -238,6 +247,24 @@ export default function RegisterStudent() {
                   required
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="monthly_fee">Monthly Fee</Label>
+                <Input
+                  id="monthly_fee"
+                  type="number"
+                  value={formData.monthly_fee}
+                  onChange={(e) => setFormData({ ...formData, monthly_fee: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="joining_date">Joining Date</Label>
+                <Input
+                  id="joining_date"
+                  type="date"
+                  value={formData.joining_date}
+                  onChange={(e) => setFormData({ ...formData, joining_date: e.target.value })}
+                />
+              </div>
             </div>
             <Button type="submit" className="w-full md:w-auto">
               Register Student
@@ -264,6 +291,8 @@ export default function RegisterStudent() {
                     <TableHead>School</TableHead>
                     <TableHead>Parent</TableHead>
                     <TableHead>Contact</TableHead>
+                    <TableHead>Monthly Fee</TableHead>
+                    <TableHead>Joining Date</TableHead>
                     <TableHead className="text-right" style={{ minWidth: '200px' }}>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -308,6 +337,25 @@ export default function RegisterStudent() {
                               }
                             />
                           </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              value={editData.monthly_fee || ""}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setEditData({ ...editData, monthly_fee: value ? parseInt(value, 10) : undefined });
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="date"
+                              value={editData.joining_date || ""}
+                              onChange={(e) =>
+                                setEditData({ ...editData, joining_date: e.target.value })
+                              }
+                            />
+                          </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
                               <Button size="sm" onClick={handleSave}>
@@ -326,6 +374,8 @@ export default function RegisterStudent() {
                           <TableCell>{student.school_name}</TableCell>
                           <TableCell>{student.parent_name}</TableCell>
                           <TableCell>{student.contact_number}</TableCell>
+                          <TableCell>{student.monthly_fee}</TableCell>
+                          <TableCell>{student.joining_date}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
                               <Button

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { User, Calendar, BookOpen, FileText, LogOut } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { differenceInDays } from 'date-fns';
 
 const ParentDashboard = () => {
   const { user, logout } = useAuth();
@@ -83,6 +84,13 @@ const ParentDashboard = () => {
   const absentDays = totalDays - presentDays;
   const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
 
+  const isFeePending = (() => {
+    if (!student?.joining_date) return false;
+    const joiningDate = new Date(student.joining_date);
+    const today = new Date();
+    return differenceInDays(today, joiningDate) > 30;
+  })();
+
   const handleLogout = () => {
     logout();
     navigate('/login-parent');
@@ -132,6 +140,20 @@ const ParentDashboard = () => {
                 <div>
                   <p className="text-sm text-muted-foreground">Contact</p>
                   <p className="font-semibold">{student.contact_number}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Joining Date</p>
+                  <p className="font-semibold">{student.joining_date ? new Date(student.joining_date).toLocaleDateString() : '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Monthly Fee</p>
+                  <p className="font-semibold">{student.monthly_fee ? `Rs. ${student.monthly_fee}` : '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Fee Status</p>
+                  <p className={`font-semibold ${isFeePending ? 'text-red-600' : 'text-green-600'}`}>
+                    {isFeePending ? `Rs. ${student.monthly_fee} Pending` : 'No pending fees'}
+                  </p>
                 </div>
               </div>
             ) : (
