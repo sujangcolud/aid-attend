@@ -128,6 +128,31 @@ export default function StudentReport() {
 
   const selectedStudent = students.find((s) => s.id === selectedStudentId);
 
+  // Toggle chapter completion mutation
+  const toggleCompletionMutation = useMutation({
+    mutationFn: async (chapterProgressId: string) => {
+      const progress = chapterProgress.find(cp => cp.id === chapterProgressId);
+      if (!progress) throw new Error("Chapter progress not found");
+
+      const { error } = await supabase
+        .from("student_chapters")
+        .update({
+          completed: !progress.completed,
+          completed_on: !progress.completed ? new Date().toISOString() : null
+        })
+        .eq("id", chapterProgressId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["student-chapters", selectedStudentId] });
+      toast.success("Chapter status updated");
+    },
+    onError: () => {
+      toast.error("Failed to update chapter status");
+    }
+  });
+
   // AI Summary mutation
   const generateSummaryMutation = useMutation({
     mutationFn: async () => {
