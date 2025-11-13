@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
@@ -22,12 +23,37 @@ interface AttendanceRecord {
 }
 
 export default function ViewRecords() {
+  const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const dateStr = format(selectedDate, "yyyy-MM-dd");
 
-  const { data: records, isLoading } = useQuery({
-    queryKey: ["attendance-records", dateStr],
+  // Fetch students for this center
+  const { data: students = [] } = useQuery({
+    queryKey: ['students', user?.center_id],
     queryFn: async () => {
+      let query = supabase
+        .from('students')
+        .select('id')
+        .order('name');
+      
+      // Filter by center_id if user is not admin
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: records, isLoading } = useQuery({
+    queryKey: ["attendance-records", dateStr, user?.center_id],
+    queryFn: async () => {
+      // Get student IDs for this center first
+      const studentIds = students.map(s => s.id);
+      if (studentIds.length === 0) return [];
+
       const { data, error } = await supabase
         .from("attendance")
         .select(`
@@ -39,11 +65,13 @@ export default function ViewRecords() {
             grade
           )
         `)
+        .in("student_id", studentIds)
         .eq("date", dateStr)
         .order("students(name)");
       if (error) throw error;
       return data as AttendanceRecord[];
     },
+    enabled: students.length > 0,
   });
 
   const exportToCSV = () => {
