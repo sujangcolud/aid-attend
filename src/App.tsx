@@ -18,6 +18,7 @@ import ViewRecords from "./pages/ViewRecords";
 import Summary from "./pages/Summary";
 import FeeManagement from "./pages/FeeManagement";
 import ChangePassword from "./pages/ChangePassword";
+import BulkStudentRegistration from "./pages/BulkStudentRegistration";
 import Login from "./pages/Login";
 import AdminLogin from "./pages/AdminLogin";
 import ParentLogin from "./pages/ParentLogin";
