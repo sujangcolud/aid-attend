@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -22,6 +22,17 @@ export default function StudentReport() {
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
   const [aiSummary, setAiSummary] = useState<string>("");
 
+  // Frontend-only fee info
+  const [studentFee, setStudentFee] = useState<{
+    joiningDate: string;
+    monthlyFee: number;
+    paid: Record<string, boolean>;
+  }>({
+    joiningDate: "",
+    monthlyFee: 0,
+    paid: {},
+  });
+
   // Fetch students filtered by center for non-admin
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
@@ -36,6 +47,19 @@ export default function StudentReport() {
     },
   });
 
+  // Update frontend fee info when student changes
+  useEffect(() => {
+    if (!selectedStudentId) return;
+    const student = students.find(s => s.id === selectedStudentId);
+    if (student) {
+      setStudentFee({
+        joiningDate: student.joiningDate || "",
+        monthlyFee: student.monthlyFee || 0,
+        paid: student.paid || {},
+      });
+    }
+  }, [selectedStudentId, students]);
+
   // Fetch attendance for selected student
   const { data: attendanceData = [] } = useQuery({
     queryKey: ["student-attendance", selectedStudentId, dateRange],
@@ -45,35 +69,33 @@ export default function StudentReport() {
         .from("attendance")
         .select("*")
         .eq("student_id", selectedStudentId)
-        .gte("date", format(dateRange.from, "yyyy-MM-dd"))
-        .lte("date", format(dateRange.to, "yyyy-MM-dd"))
-        .order("date");
+        .gte("date", dateRange.from.toISOString().split("T")[0])
+        .lte("date", dateRange.to.toISOString().split("T")[0])
+        .order("date", { ascending: true });
       if (error) throw error;
       return data;
     },
     enabled: !!selectedStudentId,
   });
 
-  // Fetch chapter progress filtered by subject
+  // Fetch student chapters (filter in JS for subject)
   const { data: chapterProgress = [] } = useQuery({
     queryKey: ["student-chapters", selectedStudentId, subjectFilter],
     queryFn: async () => {
       if (!selectedStudentId) return [];
-      let query = supabase
+      const { data, error } = await supabase
         .from("student_chapters")
         .select("*, chapters(*)")
-        .eq("student_id", selectedStudentId);
-      if (subjectFilter !== "all") {
-        query = query.eq("chapters.subject", subjectFilter);
-      }
-      const { data, error } = await query.order("date_completed", { ascending: false });
+        .eq("student_id", selectedStudentId)
+        .order("date_completed", { ascending: false });
       if (error) throw error;
-      return data;
+      if (subjectFilter === "all") return data;
+      return data.filter((c: any) => c.chapters?.subject === subjectFilter);
     },
     enabled: !!selectedStudentId,
   });
 
-  // Fetch all chapters for progress percentage
+  // Fetch all chapters
   const { data: allChapters = [] } = useQuery({
     queryKey: ["all-chapters"],
     queryFn: async () => {
@@ -83,28 +105,26 @@ export default function StudentReport() {
     },
   });
 
-  // Fetch test results filtered by subject
+  // Fetch test results
   const { data: testResults = [] } = useQuery({
     queryKey: ["student-test-results", selectedStudentId, subjectFilter],
     queryFn: async () => {
       if (!selectedStudentId) return [];
-      let query = supabase
+      const { data, error } = await supabase
         .from("test_results")
         .select("*, tests(*)")
-        .eq("student_id", selectedStudentId);
-      if (subjectFilter !== "all") {
-        query = query.eq("tests.subject", subjectFilter);
-      }
-      const { data, error } = await query.order("date_taken", { ascending: false });
+        .eq("student_id", selectedStudentId)
+        .order("date_taken", { ascending: false });
       if (error) throw error;
-      return data;
+      if (subjectFilter === "all") return data;
+      return data.filter((t: any) => t.tests?.subject === subjectFilter);
     },
     enabled: !!selectedStudentId,
   });
 
-  // Stats calculations
+  // Stats
   const totalDays = attendanceData.length;
-  const presentDays = attendanceData.filter((a) => a.status === "Present").length;
+  const presentDays = attendanceData.filter(a => a.status === "Present").length;
   const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
 
   const totalTests = testResults.length;
@@ -114,44 +134,21 @@ export default function StudentReport() {
 
   const completedChaptersCount = chapterProgress.filter(cp => cp.completed).length;
   const totalChaptersCount = allChapters.length;
-  const chapterCompletionPercentage = totalChaptersCount > 0 
-    ? Math.round((completedChaptersCount / totalChaptersCount) * 100) 
+  const chapterCompletionPercentage = totalChaptersCount > 0
+    ? Math.round((completedChaptersCount / totalChaptersCount) * 100)
     : 0;
 
-  // Get subjects from chapters and tests
-  const subjects = Array.from(new Set([
-    ...chapterProgress.map(c => c.chapters?.subject).filter(Boolean),
-    ...testResults.map(t => t.tests?.subject).filter(Boolean)
-  ]));
+  const selectedStudent = students.find(s => s.id === selectedStudentId);
 
-  const selectedStudent = students.find((s) => s.id === selectedStudentId);
-
-  // AI Summary
-  const generateSummaryMutation = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke("ai-student-summary", {
-        body: { studentId: selectedStudentId },
-      });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: (data) => {
-      setAiSummary(data.summary);
-      toast.success("AI summary generated successfully");
-    },
-    onError: (error: any) => {
-      console.error(error);
-      toast.error("Failed to generate AI summary");
-    },
-  });
-
-  // Export CSV
+  // Generate CSV
   const exportToCSV = () => {
     if (!selectedStudent) return;
     const csvContent = [
       ["Student Report"],
       ["Name", selectedStudent.name],
       ["Grade", selectedStudent.grade],
+      ["Joining Date", studentFee.joiningDate],
+      ["Monthly Fee", studentFee.monthlyFee],
       [""],
       ["Attendance Summary"],
       ["Total Days", totalDays],
@@ -211,11 +208,67 @@ export default function StudentReport() {
         </CardContent>
       </Card>
 
-      {/* Render student data only if a student is selected */}
       {selectedStudent && (
         <>
-          {/* ...Attendance, Chapter Progress, Test Results, AI Summary */}
-          {/* The rest of the code remains unchanged */}
+          {/* Fee Info */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Fee Details (Frontend Only)</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Joining Date</Label>
+                <Input
+                  type="date"
+                  value={studentFee.joiningDate}
+                  onChange={(e) => setStudentFee({ ...studentFee, joiningDate: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Monthly Fee</Label>
+                <Input
+                  type="number"
+                  value={studentFee.monthlyFee}
+                  onChange={(e) => setStudentFee({ ...studentFee, monthlyFee: Number(e.target.value) })}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Attendance Summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Attendance Summary</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p>Total Days: {totalDays}</p>
+              <p>Present: {presentDays}</p>
+              <p>Absent: {totalDays - presentDays}</p>
+              <p>Percentage: {attendancePercentage}%</p>
+            </CardContent>
+          </Card>
+
+          {/* Chapter Progress */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Chapters Studied</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p>Completed: {completedChaptersCount} / {totalChaptersCount}</p>
+              <p>Completion: {chapterCompletionPercentage}%</p>
+            </CardContent>
+          </Card>
+
+          {/* Test Results */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Test Results</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p>Total Tests: {totalTests}</p>
+              <p>Average Percentage: {averagePercentage}%</p>
+            </CardContent>
+          </Card>
         </>
       )}
     </div>
