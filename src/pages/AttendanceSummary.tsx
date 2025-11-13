@@ -1,13 +1,16 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { toast } from 'sonner';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, Edit } from 'recharts';
 
 interface AttendanceStats {
   studentId: string;
@@ -20,8 +23,35 @@ interface AttendanceStats {
 
 export default function AttendanceSummary() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [selectedStudent, setSelectedStudent] = useState('all');
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<any>(null);
+  const [editFormData, setEditFormData] = useState({
+    status: 'Present',
+    time_in: '',
+    time_out: ''
+  });
+
+  const updateAttendanceMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from('attendance')
+        .update(editFormData)
+        .eq('id', editingRecord.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['attendance-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['all-time-attendance'] });
+      toast.success('Attendance record updated successfully');
+      setIsEditDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to update attendance record');
+    }
+  });
 
   // Fetch all students
   const { data: students = [] } = useQuery({
@@ -50,22 +80,25 @@ export default function AttendanceSummary() {
       const startDate = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
       const endDate = format(endOfMonth(selectedMonth), 'yyyy-MM-dd');
 
-      // Get student IDs for this center first
-      const studentIds = students.map(s => s.id);
-      if (studentIds.length === 0) return [];
-
-      const { data, error } = await supabase
+      let query = supabase
         .from('attendance')
         .select('*, students(name, grade)')
-        .in('student_id', studentIds)
         .gte('date', startDate)
         .lte('date', endDate)
         .order('date');
 
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      } else {
+        // For admin, if no center is selected, this could fetch all.
+        // If you have a center filter for admin, you would apply it here.
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
-    enabled: students.length > 0,
+    enabled: !!user?.center_id || user?.role === "admin",
   });
 
   // Calculate statistics
@@ -126,19 +159,20 @@ export default function AttendanceSummary() {
   const { data: allTimeAttendance = [] } = useQuery({
     queryKey: ['all-time-attendance', user?.center_id],
     queryFn: async () => {
-      // Get student IDs for this center first
-      const studentIds = students.map(s => s.id);
-      if (studentIds.length === 0) return [];
-
-      const { data, error } = await supabase
+      let query = supabase
         .from('attendance')
         .select('*, students(name, grade)')
-        .in('student_id', studentIds)
         .order('date');
+
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
-    enabled: students.length > 0,
+    enabled: !!user?.center_id || user?.role === "admin",
   });
 
   const calculateAllTimeStats = (): AttendanceStats[] => {
@@ -333,27 +367,43 @@ export default function AttendanceSummary() {
               <thead className="border-b">
                 <tr>
                   <th className="text-left py-2 px-4">Student Name</th>
-                  <th className="text-right py-2 px-4">Total Days</th>
-                  <th className="text-right py-2 px-4">Present</th>
-                  <th className="text-right py-2 px-4">Absent</th>
-                  <th className="text-right py-2 px-4">Percentage</th>
+                  <th className="text-right py-2 px-4">Date</th>
+                  <th className="text-right py-2 px-4">Status</th>
+                  <th className="text-right py-2 px-4">Time In</th>
+                  <th className="text-right py-2 px-4">Time Out</th>
+                  <th className="text-right py-2 px-4">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {allTimeStats.map((stat) => (
-                  <tr key={stat.studentId} className="border-b hover:bg-muted/50">
-                    <td className="py-3 px-4 font-medium">{stat.studentName}</td>
-                    <td className="text-right py-3 px-4">{stat.totalDays}</td>
-                    <td className="text-right py-3 px-4 text-green-600 font-semibold">{stat.presentDays}</td>
-                    <td className="text-right py-3 px-4 text-red-600 font-semibold">{stat.absentDays}</td>
+                {allTimeAttendance.map((record: any) => (
+                  <tr key={record.id} className="border-b hover:bg-muted/50">
+                    <td className="py-3 px-4 font-medium">{record.students?.name}</td>
+                    <td className="text-right py-3 px-4">{format(new Date(record.date), "PPP")}</td>
                     <td className="text-right py-3 px-4">
                       <span className={`font-semibold ${
-                        stat.attendancePercentage >= 75 ? 'text-green-600' : 
-                        stat.attendancePercentage >= 50 ? 'text-yellow-600' : 
-                        'text-red-600'
+                        record.status === 'Present' ? 'text-green-600' : 'text-red-600'
                       }`}>
-                        {stat.attendancePercentage}%
+                        {record.status}
                       </span>
+                    </td>
+                    <td className="text-right py-3 px-4">{record.time_in || '-'}</td>
+                    <td className="text-right py-3 px-4">{record.time_out || '-'}</td>
+                    <td className="text-right py-3 px-4">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditingRecord(record);
+                          setEditFormData({
+                            status: record.status,
+                            time_in: record.time_in || '',
+                            time_out: record.time_out || ''
+                          });
+                          setIsEditDialogOpen(true);
+                        }}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -362,6 +412,55 @@ export default function AttendanceSummary() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Attendance</DialogTitle>
+            <DialogDescription>
+              Update the attendance record for {editingRecord?.students?.name} on {editingRecord ? format(new Date(editingRecord.date), "PPP") : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select
+                value={editFormData.status}
+                onValueChange={(value) => setEditFormData({ ...editFormData, status: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Present">Present</SelectItem>
+                  <SelectItem value="Absent">Absent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Time In</Label>
+                <Input
+                  type="time"
+                  value={editFormData.time_in}
+                  onChange={(e) => setEditFormData({ ...editFormData, time_in: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Time Out</Label>
+                <Input
+                  type="time"
+                  value={editFormData.time_out}
+                  onChange={(e) => setEditFormData({ ...editFormData, time_out: e.target.value })}
+                />
+              </div>
+            </div>
+            <Button onClick={() => updateAttendanceMutation.mutate()} disabled={updateAttendanceMutation.isPending} className="w-full">
+              {updateAttendanceMutation.isPending ? 'Updating...' : 'Update Record'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

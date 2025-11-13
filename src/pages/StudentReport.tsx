@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 
 export default function StudentReport() {
+  const { user } = useAuth();
   const [selectedStudentId, setSelectedStudentId] = useState<string>("");
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: startOfMonth(new Date()),
@@ -22,12 +24,18 @@ export default function StudentReport() {
 
   // Fetch students
   const { data: students = [] } = useQuery({
-    queryKey: ["students"],
+    queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("students")
         .select("*")
         .order("name");
+
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
@@ -35,16 +43,22 @@ export default function StudentReport() {
 
   // Fetch attendance data for selected student
   const { data: attendanceData = [] } = useQuery({
-    queryKey: ["student-attendance", selectedStudentId, dateRange],
+    queryKey: ["student-attendance", selectedStudentId, dateRange, user?.center_id],
     queryFn: async () => {
       if (!selectedStudentId) return [];
-      const { data, error } = await supabase
+      let query = supabase
         .from("attendance")
         .select("*")
         .eq("student_id", selectedStudentId)
         .gte("date", format(dateRange.from, "yyyy-MM-dd"))
         .lte("date", format(dateRange.to, "yyyy-MM-dd"))
         .order("date");
+
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
@@ -53,14 +67,18 @@ export default function StudentReport() {
 
   // Fetch chapter progress
   const { data: chapterProgress = [] } = useQuery({
-    queryKey: ["student-chapters", selectedStudentId, subjectFilter],
+    queryKey: ["student-chapters", selectedStudentId, subjectFilter, user?.center_id],
     queryFn: async () => {
       if (!selectedStudentId) return [];
       let query = supabase
         .from("student_chapters")
-        .select("*, chapters(*)")
+        .select("*, chapters!inner(*)")
         .eq("student_id", selectedStudentId);
       
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq("chapters.center_id", user.center_id);
+      }
+
       if (subjectFilter !== "all") {
         query = query.eq("chapters.subject", subjectFilter);
       }
@@ -74,26 +92,39 @@ export default function StudentReport() {
 
   // Fetch all chapters for progress calculation
   const { data: allChapters = [] } = useQuery({
-    queryKey: ["all-chapters"],
+    queryKey: ["all-chapters", user?.center_id, selectedStudent?.grade],
     queryFn: async () => {
-      const { data, error } = await supabase
+      if (!selectedStudent) return [];
+      let query = supabase
         .from("chapters")
-        .select("*");
+        .select("*")
+        .eq("grade", selectedStudent.grade);
+
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
+    enabled: !!selectedStudent,
   });
 
   // Fetch test results
   const { data: testResults = [] } = useQuery({
-    queryKey: ["student-test-results", selectedStudentId, subjectFilter],
+    queryKey: ["student-test-results", selectedStudentId, subjectFilter, user?.center_id],
     queryFn: async () => {
       if (!selectedStudentId) return [];
       let query = supabase
         .from("test_results")
-        .select("*, tests(*)")
+        .select("*, tests!inner(*)")
         .eq("student_id", selectedStudentId);
       
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq("tests.center_id", user.center_id);
+      }
+
       if (subjectFilter !== "all") {
         query = query.eq("tests.subject", subjectFilter);
       }

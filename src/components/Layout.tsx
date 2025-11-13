@@ -1,25 +1,28 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Home, UserPlus, CheckSquare, FileText, BarChart3, BookOpen, ClipboardCheck, User, Brain, LogOut, Shield, Calendar } from "lucide-react";
+import { Home, UserPlus, CheckSquare, FileText, BarChart3, BookOpen, ClipboardCheck, User, Brain, LogOut, Shield, Calendar, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { useFeatureToggles } from "@/contexts/FeatureTogglesContext";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
-  { to: "/", label: "Dashboard", icon: Home },
-  { to: "/register", label: "Register Student", icon: UserPlus },
-  { to: "/attendance", label: "Take Attendance", icon: CheckSquare },
-  { to: "/attendance-summary", label: "Attendance Summary", icon: Calendar },
-  { to: "/chapters", label: "Chapters Tracking", icon: BookOpen },
-  { to: "/tests", label: "Tests", icon: ClipboardCheck },
-  { to: "/student-report", label: "Student Report", icon: User },
-  { to: "/ai-insights", label: "AI Insights", icon: Brain },
-  { to: "/records", label: "View Records", icon: FileText },
-  { to: "/summary", label: "Summary", icon: BarChart3 },
+  { to: "/", label: "Dashboard", icon: Home, feature: null },
+  { to: "/register", label: "Register Student", icon: UserPlus, feature: null },
+  { to: "/attendance", label: "Take Attendance", icon: CheckSquare, feature: "Attendance" },
+  { to: "/attendance-summary", label: "Attendance Summary", icon: Calendar, feature: "Attendance Report" },
+  { to: "/chapters", label: "Chapters Tracking", icon: BookOpen, feature: "Chapter Progress" },
+  { to: "/tests", label: "Tests", icon: ClipboardCheck, feature: "Tests & Marks" },
+  { to: "/student-report", label: "Student Report", icon: User, feature: "Student Report" },
+  { to: "/fees", label: "Fee Management", icon: DollarSign, feature: "Finance" },
+  { to: "/ai-insights", label: "AI Insights", icon: Brain, feature: null },
+  { to: "/records", label: "View Records", icon: FileText, feature: null },
+  { to: "/summary", label: "Summary", icon: BarChart3, feature: null },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { user, logout } = useAuth();
+  const { featureToggles } = useFeatureToggles();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -61,6 +64,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 </Button>
               )}
             </div>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/change-password')}>
+              <Shield className="h-4 w-4 mr-2" />
+              Change Password
+            </Button>
             <Button variant="ghost" size="sm" onClick={handleLogout}>
               <LogOut className="h-4 w-4 mr-2" />
               Logout
@@ -73,25 +80,27 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <nav className="border-b bg-card">
         <div className="container">
           <div className="flex overflow-x-auto">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = location.pathname === item.to;
-              return (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className={cn(
-                    "flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors hover:text-primary",
-                    isActive
-                      ? "border-primary text-primary"
-                      : "border-transparent text-muted-foreground"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
+            {navItems
+              .filter((item) => item.feature === null || featureToggles[item.feature])
+              .map((item) => {
+                const Icon = item.icon;
+                const isActive = location.pathname === item.to;
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={cn(
+                      "flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors hover:text-primary",
+                      isActive
+                        ? "border-primary text-primary"
+                        : "border-transparent text-muted-foreground"
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                );
+              })}
           </div>
         </div>
       </nav>

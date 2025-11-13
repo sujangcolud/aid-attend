@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,7 @@ import { format } from "date-fns";
 
 export default function ChaptersTracking() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [subject, setSubject] = useState("");
@@ -28,12 +30,18 @@ export default function ChaptersTracking() {
 
   // Fetch students
   const { data: students = [] } = useQuery({
-    queryKey: ["students"],
+    queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("students")
         .select("*")
         .order("name");
+
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
@@ -41,12 +49,16 @@ export default function ChaptersTracking() {
 
   // Fetch all chapters taught (history)
   const { data: chapters = [] } = useQuery({
-    queryKey: ["chapters", filterSubject, filterStudent],
+    queryKey: ["chapters", filterSubject, filterStudent, user?.center_id],
     queryFn: async () => {
       let query = supabase
         .from("chapters")
         .select("*, student_chapters(*, students(name, grade))")
         .order("date_taught", { ascending: false });
+
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq("center_id", user.center_id);
+      }
 
       if (filterSubject !== "all") {
         query = query.eq("subject", filterSubject);
@@ -64,17 +76,23 @@ export default function ChaptersTracking() {
 
       return data;
     },
+    enabled: !!user?.center_id || user?.role === "admin",
   });
 
   // Fetch unique chapters (master list) for selection
   const { data: uniqueChapters = [] } = useQuery({
-    queryKey: ["unique-chapters"],
+    queryKey: ["unique-chapters", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("chapters")
         .select("id, subject, chapter_name")
         .order("subject, chapter_name");
 
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq("center_id", user.center_id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
 
       // Remove duplicates by creating a map
@@ -89,6 +107,7 @@ export default function ChaptersTracking() {
       }
       return unique;
     },
+    enabled: !!user?.center_id || user?.role === "admin",
   });
 
   // Add chapter mutation with multi-student support
@@ -105,6 +124,7 @@ export default function ChaptersTracking() {
             chapter_name: chapterName,
             date_taught: date,
             notes: notes || null,
+            center_id: user?.center_id,
           })
           .select()
           .single();
@@ -123,6 +143,7 @@ export default function ChaptersTracking() {
             chapter_name: selectedChapter.chapter_name,
             date_taught: date,
             notes: notes || null,
+            center_id: user?.center_id,
           })
           .select()
           .single();
@@ -137,8 +158,6 @@ export default function ChaptersTracking() {
       const studentChapters = selectedStudentIds.map(studentId => ({
         student_id: studentId,
         chapter_id: chapterId,
-        completed: true,
-        date_completed: date,
       }));
 
       const { error: linkError } = await supabase
@@ -171,7 +190,13 @@ export default function ChaptersTracking() {
   // Delete chapter mutation
   const deleteChapterMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("chapters").delete().eq("id", id);
+      let query = supabase.from("chapters").delete().eq("id", id);
+
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq("center_id", user.center_id);
+      }
+
+      const { error } = await query;
       if (error) throw error;
     },
     onSuccess: () => {
@@ -180,6 +205,24 @@ export default function ChaptersTracking() {
     },
     onError: () => {
       toast.error("Failed to delete chapter");
+    },
+  });
+
+  // Update completion status mutation
+  const updateCompletionMutation = useMutation({
+    mutationFn: async ({ id, completed, date_completed }: { id: string; completed: boolean; date_completed: string | null }) => {
+      const { error } = await supabase
+        .from("student_chapters")
+        .update({ completed, date_completed })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["chapters"] });
+      toast.success("Chapter completion status updated");
+    },
+    onError: () => {
+      toast.error("Failed to update chapter completion status");
     },
   });
 
@@ -216,7 +259,7 @@ export default function ChaptersTracking() {
               Record Chapter
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Record Chapter</DialogTitle>
               <DialogDescription>
@@ -430,12 +473,25 @@ export default function ChaptersTracking() {
                     )}
                     <div className="flex flex-wrap gap-2 mt-3">
                       {chapter.student_chapters?.map((sc: any) => (
-                        <span
-                          key={sc.id}
-                          className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary"
-                        >
-                          {sc.students?.name}
-                        </span>
+                        <div key={sc.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`completed-${sc.id}`}
+                            checked={sc.completed}
+                            onCheckedChange={(isChecked) =>
+                              updateCompletionMutation.mutate({
+                                id: sc.id,
+                                completed: !!isChecked,
+                                date_completed: isChecked ? new Date().toISOString() : null,
+                              })
+                            }
+                          />
+                          <label
+                            htmlFor={`completed-${sc.id}`}
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                          >
+                            {sc.students?.name}
+                          </label>
+                        </div>
                       ))}
                     </div>
                   </div>
