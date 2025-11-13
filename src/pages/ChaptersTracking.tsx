@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ import { Trash2, Users, Plus } from "lucide-react";
 import { format } from "date-fns";
 
 export default function ChaptersTracking() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -28,12 +30,18 @@ export default function ChaptersTracking() {
 
   // Fetch students
   const { data: students = [] } = useQuery({
-    queryKey: ["students"],
+    queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("students")
         .select("*")
         .order("name");
+
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
