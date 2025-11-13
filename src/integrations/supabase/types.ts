@@ -226,6 +226,7 @@ export type Database = {
         Row: {
           chapter_id: string
           completed: boolean
+          completed_on: string | null
           created_at: string
           date_completed: string
           id: string
@@ -234,6 +235,7 @@ export type Database = {
         Insert: {
           chapter_id: string
           completed?: boolean
+          completed_on?: string | null
           created_at?: string
           date_completed?: string
           id?: string
@@ -242,6 +244,7 @@ export type Database = {
         Update: {
           chapter_id?: string
           completed?: boolean
+          completed_on?: string | null
           created_at?: string
           date_completed?: string
           id?: string
@@ -263,6 +266,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      system_config: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          key: string
+          updated_at: string
+          value: boolean
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          key: string
+          updated_at?: string
+          value?: boolean
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          key?: string
+          updated_at?: string
+          value?: boolean
+        }
+        Relationships: []
       }
       student_fees: {
         Row: {
