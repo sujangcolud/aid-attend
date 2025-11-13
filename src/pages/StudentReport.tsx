@@ -113,11 +113,11 @@ export default function StudentReport() {
   const totalMaxMarks = testResults.reduce((sum, r) => sum + (r.tests?.total_marks || 0), 0);
   const averagePercentage = totalMaxMarks > 0 ? Math.round((totalMarksObtained / totalMaxMarks) * 100) : 0;
 
-  // Calculate chapter progress percentage
+  // Calculate chapter progress percentage - only for assigned chapters
   const completedChaptersCount = chapterProgress.filter(cp => cp.completed).length;
-  const totalChaptersCount = allChapters.length;
-  const chapterCompletionPercentage = totalChaptersCount > 0 
-    ? Math.round((completedChaptersCount / totalChaptersCount) * 100) 
+  const totalChaptersCount = chapterProgress.length;
+  const chapterCompletionPercentage = totalChaptersCount > 0
+    ? Math.round((completedChaptersCount / totalChaptersCount) * 100)
     : 0;
 
   // Get unique subjects
