@@ -64,10 +64,10 @@ const ParentDashboard = () => {
     queryKey: ['chapters-studied', user.student_id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('student_chapters')
-        .select('*, chapters(*)')
+        .from('chapters_studied')
+        .select('*')
         .eq('student_id', user.student_id!)
-        .order('date_completed', { ascending: false });
+        .order('date', { ascending: false });
       if (error) throw error;
       return data;
     },
@@ -247,10 +247,10 @@ const ParentDashboard = () => {
                 <TableBody>
                   {chapters.map((chapter: any) => (
                     <TableRow key={chapter.id}>
-                      <TableCell className="font-medium">{chapter.chapters.subject}</TableCell>
-                      <TableCell>{chapter.chapters.chapter_name}</TableCell>
-                      <TableCell>{new Date(chapter.date_completed).toLocaleDateString()}</TableCell>
-                      <TableCell>{chapter.chapters.notes || '-'}</TableCell>
+                      <TableCell className="font-medium">{chapter.subject}</TableCell>
+                      <TableCell>{chapter.chapter_name}</TableCell>
+                      <TableCell>{new Date(chapter.date).toLocaleDateString()}</TableCell>
+                      <TableCell>{chapter.notes || '-'}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
