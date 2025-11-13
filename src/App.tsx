@@ -16,6 +16,8 @@ import StudentReport from "./pages/StudentReport";
 import AIInsights from "./pages/AIInsights";
 import ViewRecords from "./pages/ViewRecords";
 import Summary from "./pages/Summary";
+import FeeManagement from "./pages/FeeManagement";
+import ChangePassword from "./pages/ChangePassword";
 import Login from "./pages/Login";
 import AdminLogin from "./pages/AdminLogin";
 import ParentLogin from "./pages/ParentLogin";
