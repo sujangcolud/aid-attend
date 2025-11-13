@@ -61,7 +61,7 @@ export default function StudentReport() {
     enabled: !!selectedStudentId,
   });
 
-  // Fetch chapter progress
+  // Fetch chapter progress for selected student only
   const { data: chapterProgress = [] } = useQuery({
     queryKey: ["student-chapters", selectedStudentId, subjectFilter],
     queryFn: async () => {
@@ -70,28 +70,16 @@ export default function StudentReport() {
         .from("student_chapters")
         .select("*, chapters(*)")
         .eq("student_id", selectedStudentId);
-      
+
       if (subjectFilter !== "all") {
         query = query.eq("chapters.subject", subjectFilter);
       }
-      
+
       const { data, error } = await query.order("date_completed", { ascending: false });
       if (error) throw error;
       return data;
     },
     enabled: !!selectedStudentId,
-  });
-
-  // Fetch all chapters for progress calculation
-  const { data: allChapters = [] } = useQuery({
-    queryKey: ["all-chapters"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("chapters")
-        .select("*");
-      if (error) throw error;
-      return data;
-    },
   });
 
   // Fetch test results
