@@ -59,18 +59,26 @@ const ParentDashboard = () => {
     },
   });
 
-  // Fetch chapters studied
+  // Fetch all chapters taught to this student (from student_chapters with full chapter details)
   const { data: chapters = [] } = useQuery({
-    queryKey: ['chapters-studied', user.student_id],
+    queryKey: ['student-chapter-history', user.student_id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('chapters_studied')
-        .select('*')
+        .from('student_chapters')
+        .select('id, date_completed, chapters(id, chapter_name, subject, date_taught, notes), students(center_id)')
         .eq('student_id', user.student_id!)
-        .order('date', { ascending: false });
+        .order('date_completed', { ascending: false });
+
       if (error) throw error;
+
+      // Filter by center_id to ensure data isolation
+      if (student && student.center_id) {
+        return data.filter(sc => sc.students?.center_id === student.center_id);
+      }
+
       return data;
     },
+    enabled: !!user.student_id && !!student,
   });
 
   // Calculate attendance stats
