@@ -9,8 +9,11 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Shield, Power, PowerOff, Edit } from 'lucide-react';
+import { Plus, Shield, Power, PowerOff, Edit, Settings, BarChart3 } from 'lucide-react';
+import FeatureToggles from './FeatureToggles';
+import AdminAnalytics from './AdminAnalytics';
 
 const AdminDashboard = () => {
   const { user } = useAuth();
@@ -282,84 +285,109 @@ const AdminDashboard = () => {
           </DialogContent>
         </Dialog>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>All Centers</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <p>Loading centers...</p>
-            ) : centers.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">No centers registered yet</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Center Name</TableHead>
-                    <TableHead>Address</TableHead>
-                    <TableHead>Contact</TableHead>
-                    <TableHead>Username</TableHead>
-                    <TableHead>Last Login</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {centers.map((center: any) => {
-                    const centerUser = center.users?.[0];
-                    return (
-                      <TableRow key={center.id}>
-                        <TableCell className="font-medium">{center.center_name}</TableCell>
-                        <TableCell>{center.address || '-'}</TableCell>
-                        <TableCell>{center.contact_number || '-'}</TableCell>
-                        <TableCell>{centerUser?.username || '-'}</TableCell>
-                        <TableCell>
-                          {centerUser?.last_login 
-                            ? new Date(centerUser.last_login).toLocaleDateString()
-                            : 'Never'}
-                        </TableCell>
-                        <TableCell>
-                          {centerUser?.is_active ? (
-                            <span className="text-green-600 font-medium">Active</span>
-                          ) : (
-                            <span className="text-red-600 font-medium">Inactive</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleOpenEditDialog(center)}
-                            >
-                              <Edit className="h-4 w-4 mr-1" /> Edit
-                            </Button>
-                            {centerUser && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => toggleStatusMutation.mutate({
-                                  userId: centerUser.id,
-                                  isActive: centerUser.is_active
-                                })}
-                              >
-                                {centerUser.is_active ? (
-                                  <><PowerOff className="h-4 w-4 mr-1" /> Deactivate</>
-                                ) : (
-                                  <><Power className="h-4 w-4 mr-1" /> Activate</>
-                                )}
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
+        <Tabs defaultValue="centers">
+          <TabsList>
+            <TabsTrigger value="centers">
+              <Shield className="h-4 w-4 mr-2" />
+              Center Management
+            </TabsTrigger>
+            <TabsTrigger value="toggles">
+              <Settings className="h-4 w-4 mr-2" />
+              Feature Toggles
+            </TabsTrigger>
+            <TabsTrigger value="analytics">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Analytics
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="centers">
+            <Card>
+              <CardHeader>
+                <CardTitle>All Centers</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <p>Loading centers...</p>
+                ) : centers.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8">No centers registered yet</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                        <TableHead>Center Name</TableHead>
+                        <TableHead>Address</TableHead>
+                        <TableHead>Contact</TableHead>
+                        <TableHead>Username</TableHead>
+                        <TableHead>Last Login</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {centers.map((center: any) => {
+                        const centerUser = center.users?.[0];
+                        return (
+                          <TableRow key={center.id}>
+                            <TableCell className="font-medium">{center.center_name}</TableCell>
+                            <TableCell>{center.address || '-'}</TableCell>
+                            <TableCell>{center.contact_number || '-'}</TableCell>
+                            <TableCell>{centerUser?.username || '-'}</TableCell>
+                            <TableCell>
+                              {centerUser?.last_login
+                                ? new Date(centerUser.last_login).toLocaleDateString()
+                                : 'Never'}
+                            </TableCell>
+                            <TableCell>
+                              {centerUser?.is_active ? (
+                                <span className="text-green-600 font-medium">Active</span>
+                              ) : (
+                                <span className="text-red-600 font-medium">Inactive</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleOpenEditDialog(center)}
+                                >
+                                  <Edit className="h-4 w-4 mr-1" /> Edit
+                                </Button>
+                                {centerUser && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => toggleStatusMutation.mutate({
+                                      userId: centerUser.id,
+                                      isActive: centerUser.is_active
+                                    })}
+                                  >
+                                    {centerUser.is_active ? (
+                                      <><PowerOff className="h-4 w-4 mr-1" /> Deactivate</>
+                                    ) : (
+                                      <><Power className="h-4 w-4 mr-1" /> Activate</>
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="toggles">
+            <FeatureToggles />
+          </TabsContent>
+          <TabsContent value="analytics">
+            <AdminAnalytics />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

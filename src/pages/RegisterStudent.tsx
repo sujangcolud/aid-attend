@@ -8,8 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Pencil, Trash2, Save, X, UserPlus } from "lucide-react";
+import { Pencil, Trash2, Save, X, UserPlus, Upload } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import Papa from "papaparse";
 
 interface Student {
   id: string;
@@ -141,6 +142,41 @@ export default function RegisterStudent() {
     setEditData(null);
   };
 
+  const bulkRegisterMutation = useMutation({
+    mutationFn: async (students: any[]) => {
+      const { error } = await supabase.from("students").insert(students);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["students", user?.center_id] });
+      toast.success("Students registered successfully!");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to register students");
+    },
+  });
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          const students = results.data.map((row: any) => ({
+            name: row["Student Name"],
+            grade: row["Grade"],
+            school_name: row["School Name"],
+            parent_name: row["Parent Name"],
+            contact_number: row["Contact"],
+            center_id: user?.center_id,
+          }));
+          bulkRegisterMutation.mutate(students);
+        },
+      });
+    }
+  };
+
   // Create parent account mutation
   const createParentMutation = useMutation({
     mutationFn: async () => {
@@ -247,9 +283,30 @@ export default function RegisterStudent() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Registered Students</CardTitle>
-          <CardDescription>Manage your student records</CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Registered Students</CardTitle>
+            <CardDescription>Manage your student records</CardDescription>
+          </div>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Upload className="h-4 w-4 mr-2" />
+                Bulk Register
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Bulk Student Registration</DialogTitle>
+                <DialogDescription>
+                  Upload a CSV file with student data. The file should have the following headers: "Student Name", "Grade", "School Name", "Parent Name", "Contact".
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                <Input type="file" accept=".csv" onChange={handleFileUpload} />
+              </div>
+            </DialogContent>
+          </Dialog>
         </CardHeader>
         <CardContent>
           {isLoading ? (

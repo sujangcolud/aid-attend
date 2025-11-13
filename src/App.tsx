@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
+import { FeatureTogglesProvider } from "./contexts/FeatureTogglesContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
@@ -23,39 +24,47 @@ import AdminDashboard from "./pages/AdminDashboard";
 import ParentDashboard from "./pages/ParentDashboard";
 import InitAdmin from "./pages/InitAdmin";
 import NotFound from "./pages/NotFound";
+import FeeManagement from "./pages/FeeManagement";
+import ChangePassword from "./pages/ChangePassword";
+import AdminAnalytics from "./pages/AdminAnalytics";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/init-admin" element={<InitAdmin />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/login-admin" element={<AdminLogin />} />
-            <Route path="/login-parent" element={<ParentLogin />} />
-            <Route path="/parent-dashboard" element={<ProtectedRoute><ParentDashboard /></ProtectedRoute>} />
-            <Route path="/" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
-            <Route path="/register" element={<ProtectedRoute><Layout><RegisterStudent /></Layout></ProtectedRoute>} />
-            <Route path="/attendance" element={<ProtectedRoute><Layout><TakeAttendance /></Layout></ProtectedRoute>} />
-            <Route path="/attendance-summary" element={<ProtectedRoute><Layout><AttendanceSummary /></Layout></ProtectedRoute>} />
-            <Route path="/chapters" element={<ProtectedRoute><Layout><ChaptersTracking /></Layout></ProtectedRoute>} />
-            <Route path="/tests" element={<ProtectedRoute><Layout><Tests /></Layout></ProtectedRoute>} />
-            <Route path="/student-report" element={<ProtectedRoute><Layout><StudentReport /></Layout></ProtectedRoute>} />
-            <Route path="/ai-insights" element={<ProtectedRoute><Layout><AIInsights /></Layout></ProtectedRoute>} />
-            <Route path="/records" element={<ProtectedRoute><Layout><ViewRecords /></Layout></ProtectedRoute>} />
-            <Route path="/summary" element={<ProtectedRoute><Layout><Summary /></Layout></ProtectedRoute>} />
-            <Route path="/admin-dashboard" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </AuthProvider>
+    <FeatureTogglesProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/init-admin" element={<InitAdmin />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/login-admin" element={<AdminLogin />} />
+              <Route path="/login-parent" element={<ParentLogin />} />
+              <Route path="/parent-dashboard" element={<ProtectedRoute><ParentDashboard /></ProtectedRoute>} />
+              <Route path="/" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
+              <Route path="/register" element={<ProtectedRoute><Layout><RegisterStudent /></Layout></ProtectedRoute>} />
+              <Route path="/attendance" element={<ProtectedRoute><Layout><TakeAttendance /></Layout></ProtectedRoute>} />
+              <Route path="/attendance-summary" element={<ProtectedRoute><Layout><AttendanceSummary /></Layout></ProtectedRoute>} />
+              <Route path="/chapters" element={<ProtectedRoute><Layout><ChaptersTracking /></Layout></ProtectedRoute>} />
+              <Route path="/tests" element={<ProtectedRoute><Layout><Tests /></Layout></ProtectedRoute>} />
+              <Route path="/student-report" element={<ProtectedRoute><Layout><StudentReport /></Layout></ProtectedRoute>} />
+              <Route path="/ai-insights" element={<ProtectedRoute><Layout><AIInsights /></Layout></ProtectedRoute>} />
+              <Route path="/records"={<ProtectedRoute><Layout><ViewRecords /></Layout></ProtectedRoute>} />
+            <Route path="/fees" element={<ProtectedRoute><Layout><FeeManagement /></Layout></ProtectedRoute>} />
+            <Route path="/change-password" element={<ProtectedRoute><Layout><ChangePassword /></Layout></ProtectedRoute>} />
+            <Route path="/admin-analytics" element={<ProtectedRoute adminOnly><Layout><AdminAnalytics /></Layout></ProtectedRoute>} />
+              <Route path="/summary" element={<ProtectedRoute><Layout><Summary /></Layout></ProtectedRoute>} />
+              <Route path="/admin-dashboard" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </AuthProvider>
+    </FeatureTogglesProvider>
   </QueryClientProvider>
 );
 
