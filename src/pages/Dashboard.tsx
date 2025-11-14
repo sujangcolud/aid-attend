@@ -1,153 +1,96 @@
+import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, CheckCircle2, XCircle, TrendingUp } from "lucide-react";
-import { format } from "date-fns";
 
 export default function Dashboard() {
-  const today = format(new Date(), "yyyy-MM-dd");
+  const { user } = useAuth();
 
-  // 1️⃣ Get logged-in user's center_id
-  const { data: userCenterId } = useQuery({
-    queryKey: ["user-center-id"],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
+  const centerId = user?.center_id;
+  const role = user?.role;
+  const today = new Date().toISOString().split("T")[0];
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("center_id")
-        .eq("id", user.id)
-        .single();
-
-      if (error) return null;
-      return data.center_id;
-    },
-  });
-
-  // Wait until center_id is loaded
-  const enabled = !!userCenterId;
-
-  // 2️⃣ Center-based student count
+  // ---------------------------
+  // 1️⃣ TOTAL STUDENTS COUNT
+  // ---------------------------
   const { data: studentsCount } = useQuery({
-    queryKey: ["students-count", userCenterId],
-    enabled,
+    queryKey: ["students-count", centerId],
     queryFn: async () => {
-      const { count } = await supabase
+      let query = supabase
         .from("students")
-        .select("*", { count: "exact", head: true })
-        .eq("center_id", userCenterId);
+        .select("*", { count: "exact", head: true });
 
+      // Admin sees all centers
+      if (role !== "admin") {
+        query = query.eq("center_id", centerId);
+      }
+
+      const { count } = await query;
       return count || 0;
     },
+    enabled: !!user,
   });
 
-  // 3️⃣ Center-based attendance
+  // ---------------------------
+  // 2️⃣ TODAY'S ATTENDANCE
+  // ---------------------------
   const { data: todayAttendance } = useQuery({
-    queryKey: ["today-attendance", today, userCenterId],
-    enabled,
+    queryKey: ["today-attendance", today, centerId],
     queryFn: async () => {
-      const { data } = await supabase
+      let query = supabase
         .from("attendance")
         .select("status")
-        .eq("date", today)
-        .eq("center_id", userCenterId);
+        .eq("date", today);
 
+      if (role !== "admin") {
+        query = query.eq("center_id", centerId);
+      }
+
+      const { data } = await query;
       return data || [];
     },
+    enabled: !!user,
   });
 
-  const presentCount =
-    todayAttendance?.filter((a) => a.status === "Present").length || 0;
-  const absentCount =
-    todayAttendance?.filter((a) => a.status === "Absent").length || 0;
-  const attendanceRate =
-    studentsCount ? Math.round((presentCount / studentsCount) * 100) : 0;
-
-  const stats = [
-    {
-      title: "Total Students",
-      value: studentsCount || 0,
-      icon: Users,
-      color: "text-primary",
-      bgColor: "bg-primary/10",
-    },
-    {
-      title: "Present Today",
-      value: presentCount,
-      icon: CheckCircle2,
-      color: "text-secondary",
-      bgColor: "bg-secondary/10",
-    },
-    {
-      title: "Absent Today",
-      value: absentCount,
-      icon: XCircle,
-      color: "text-destructive",
-      bgColor: "bg-destructive/10",
-    },
-    {
-      title: "Attendance Rate",
-      value: `${attendanceRate}%`,
-      icon: TrendingUp,
-      color: "text-accent",
-      bgColor: "bg-accent/10",
-    },
-  ];
+  const presentCount = todayAttendance?.filter((a) => a.status === "present").length || 0;
+  const absentCount = todayAttendance?.filter((a) => a.status === "absent").length || 0;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-        <p className="text-muted-foreground">Center-specific attendance overview.</p>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <Card key={stat.title} className="transition-all hover:shadow-md">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                <div className={`rounded-lg p-2 ${stat.bgColor}`}>
-                  <Icon className={`h-4 w-4 ${stat.color}`} />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
+    <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Total Students */}
       <Card>
         <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>Common tasks to get you started</CardDescription>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Users className="w-5 h-5" /> Total Students
+          </CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <a
-            href="/register"
-            className="group rounded-lg border p-4 transition-all hover:border-primary hover:shadow-md"
-          >
-            <h3 className="font-semibold group-hover:text-primary">Register New Student</h3>
-            <p className="text-sm text-muted-foreground">Add a new student to the system</p>
-          </a>
-          <a
-            href="/attendance"
-            className="group rounded-lg border p-4 transition-all hover:border-primary hover:shadow-md"
-          >
-            <h3 className="font-semibold group-hover:text-primary">Take Attendance</h3>
-            <p className="text-sm text-muted-foreground">Mark today's attendance</p>
-          </a>
-          <a
-            href="/summary"
-            className="group rounded-lg border p-4 transition-all hover:border-primary hover:shadow-md"
-          >
-            <h3 className="font-semibold group-hover:text-primary">View Summary</h3>
-            <p className="text-sm text-muted-foreground">Check attendance statistics</p>
-          </a>
+        <CardContent>
+          <p className="text-3xl font-bold">{studentsCount ?? 0}</p>
+        </CardContent>
+      </Card>
+
+      {/* Present Today */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg text-green-600">
+            <CheckCircle2 className="w-5 h-5" /> Present Today
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-3xl font-bold">{presentCount}</p>
+        </CardContent>
+      </Card>
+
+      {/* Absent Today */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg text-red-600">
+            <XCircle className="w-5 h-5" /> Absent Today
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-3xl font-bold">{absentCount}</p>
         </CardContent>
       </Card>
     </div>
