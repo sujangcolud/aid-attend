@@ -19,7 +19,7 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
 
-    const result = await login(username, password);
+    const result = await login(username, password, 'center');
 
     if (result.success) {
       toast({

@@ -32,7 +32,7 @@ serve(async (req) => {
   }
 
   try {
-    const { username, password } = await req.json();
+    const { username, password, role } = await req.json();
 
     if (!username || !password) {
       return new Response(
@@ -59,6 +59,15 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ success: false, error: 'Invalid credentials' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
+      );
+    }
+
+    // Role-based access control
+    if (role && user.role !== role) {
+      console.log(`Role mismatch for user: ${username}. Expected ${role}, but got ${user.role}`);
+      return new Response(
+        JSON.stringify({ success: false, error: 'Access denied. Incorrect role.' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 }
       );
     }
 

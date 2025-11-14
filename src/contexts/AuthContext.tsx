@@ -14,7 +14,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (username: string, password: string, role?: 'admin' | 'center' | 'parent') => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 }
 
@@ -33,10 +33,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(false);
   }, []);
 
-  const login = async (username: string, password: string) => {
+  const login = async (username: string, password: string, role?: 'admin' | 'center' | 'parent') => {
     try {
       const { data, error } = await supabase.functions.invoke('auth-login', {
-        body: { username, password }
+        body: { username, password, role }
       });
 
       if (error) throw error;
