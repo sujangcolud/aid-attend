@@ -7,30 +7,62 @@ import { format } from "date-fns";
 export default function Dashboard() {
   const today = format(new Date(), "yyyy-MM-dd");
 
+  // 1️⃣ Get logged-in user's center_id
+  const { data: userCenterId } = useQuery({
+    queryKey: ["user-center-id"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("center_id")
+        .eq("id", user.id)
+        .single();
+
+      if (error) return null;
+      return data.center_id;
+    },
+  });
+
+  // Wait until center_id is loaded
+  const enabled = !!userCenterId;
+
+  // 2️⃣ Center-based student count
   const { data: studentsCount } = useQuery({
-    queryKey: ["students-count"],
+    queryKey: ["students-count", userCenterId],
+    enabled,
     queryFn: async () => {
       const { count } = await supabase
         .from("students")
-        .select("*", { count: "exact", head: true });
+        .select("*", { count: "exact", head: true })
+        .eq("center_id", userCenterId);
+
       return count || 0;
     },
   });
 
+  // 3️⃣ Center-based attendance
   const { data: todayAttendance } = useQuery({
-    queryKey: ["today-attendance", today],
+    queryKey: ["today-attendance", today, userCenterId],
+    enabled,
     queryFn: async () => {
       const { data } = await supabase
         .from("attendance")
         .select("status")
-        .eq("date", today);
+        .eq("date", today)
+        .eq("center_id", userCenterId);
+
       return data || [];
     },
   });
 
-  const presentCount = todayAttendance?.filter((a) => a.status === "Present").length || 0;
-  const absentCount = todayAttendance?.filter((a) => a.status === "Absent").length || 0;
-  const attendanceRate = studentsCount ? Math.round((presentCount / studentsCount) * 100) : 0;
+  const presentCount =
+    todayAttendance?.filter((a) => a.status === "Present").length || 0;
+  const absentCount =
+    todayAttendance?.filter((a) => a.status === "Absent").length || 0;
+  const attendanceRate =
+    studentsCount ? Math.round((presentCount / studentsCount) * 100) : 0;
 
   const stats = [
     {
@@ -67,9 +99,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-        <p className="text-muted-foreground">
-          Welcome back! Here's today's attendance overview.
-        </p>
+        <p className="text-muted-foreground">Center-specific attendance overview.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
