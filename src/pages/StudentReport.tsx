@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -18,31 +18,23 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  CalendarIcon,
-  Download,
-  Brain,
-  Loader2,
-  BookOpen,
-  FileText,
-  Upload,
-} from "lucide-react";
+import { CalendarIcon, Download, Brain, Loader2, BookOpen, FileText } from "lucide-react";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 
 export default function StudentReport() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
-  // Filters
   const [selectedGrade, setSelectedGrade] = useState<string>("all");
   const [selectedStudentId, setSelectedStudentId] = useState<string>("");
-  const [subjectFilter, setSubjectFilter] = useState<string>("all");
-  const [chapterSubjectFilter, setChapterSubjectFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
   });
+  const [subjectFilter, setSubjectFilter] = useState<string>("all");
+  const [chapterSubjectFilter, setChapterSubjectFilter] = useState<string>("all");
   const [aiSummary, setAiSummary] = useState<string>("");
 
   // Fetch students
@@ -58,7 +50,9 @@ export default function StudentReport() {
     },
   });
 
-  // Fetch attendance
+  const selectedStudent = students.find((s) => s.id === selectedStudentId);
+
+  // Attendance
   const { data: attendanceData = [] } = useQuery({
     queryKey: ["student-attendance", selectedStudentId, dateRange],
     queryFn: async () => {
@@ -76,7 +70,7 @@ export default function StudentReport() {
     enabled: !!selectedStudentId,
   });
 
-  // Fetch all chapters
+  // Fetch all chapters (for statistics)
   const { data: allChapters = [] } = useQuery({
     queryKey: ["all-chapters", user?.center_id],
     queryFn: async () => {
@@ -88,7 +82,7 @@ export default function StudentReport() {
     },
   });
 
-  // Fetch chapter progress
+  // Chapter Progress
   const { data: chapterProgress = [] } = useQuery({
     queryKey: ["student-chapters", selectedStudentId, chapterSubjectFilter],
     queryFn: async () => {
@@ -105,58 +99,42 @@ export default function StudentReport() {
     enabled: !!selectedStudentId,
   });
 
-  // Fetch test results with answersheet links
+  // Fetch test results
   const { data: testResults = [] } = useQuery({
     queryKey: ["student-test-results", selectedStudentId, subjectFilter],
     queryFn: async () => {
       if (!selectedStudentId) return [];
-      let query = supabase
-        .from("test_results")
-        .select("*, tests(*)")
-        .eq("student_id", selectedStudentId);
+      let query = supabase.from("test_results").select("*, tests(*)").eq("student_id", selectedStudentId);
       if (subjectFilter !== "all") query = query.eq("tests.subject", subjectFilter);
       const { data, error } = await query.order("date_taken", { ascending: false });
       if (error) throw error;
-
-      // Attach public URL
-      const resultsWithUrl = data.map(r => {
-        let publicUrl = "";
-        if (r.answersheet_url) {
-          const { data } = supabase.storage.from("test-files").getPublicUrl(r.answersheet_url);
-          publicUrl = data.publicUrl;
-        }
-        return { ...r, publicUrl };
-      });
-      return resultsWithUrl;
+      return data;
     },
     enabled: !!selectedStudentId,
   });
 
-  // Compute attendance stats
+  // Compute statistics
   const totalDays = attendanceData.length;
   const presentDays = attendanceData.filter((a) => a.status === "Present").length;
   const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
 
-  // Compute test stats
   const totalTests = testResults.length;
   const totalMarksObtained = testResults.reduce((sum, r) => sum + r.marks_obtained, 0);
   const totalMaxMarks = testResults.reduce((sum, r) => sum + (r.tests?.total_marks || 0), 0);
   const averagePercentage = totalMaxMarks > 0 ? Math.round((totalMarksObtained / totalMaxMarks) * 100) : 0;
 
-  // Compute chapter stats
+  const filteredChapters = allChapters.filter(
+    ch => chapterSubjectFilter === "all" || ch.subject === chapterSubjectFilter
+  );
   const completedChaptersCount = chapterProgress.filter(cp => cp.completed).length;
-  const totalChaptersCount = allChapters.length;
-  const chapterCompletionPercentage = totalChaptersCount > 0
-    ? Math.round((completedChaptersCount / totalChaptersCount) * 100)
+  const chapterCompletionPercentage = filteredChapters.length > 0
+    ? Math.round((completedChaptersCount / filteredChapters.length) * 100)
     : 0;
 
-  // Subjects for filters
   const subjects = Array.from(new Set([
     ...chapterProgress.map(c => c.chapters?.subject).filter(Boolean),
     ...testResults.map(t => t.tests?.subject).filter(Boolean)
   ]));
-
-  const selectedStudent = students.find((s) => s.id === selectedStudentId);
 
   // AI Summary mutation
   const generateSummaryMutation = useMutation({
@@ -193,14 +171,14 @@ export default function StudentReport() {
       ["Percentage", attendancePercentage + "%"],
       [""],
       ["Test Results"],
-      ["Test Name", "Subject", "Marks Obtained", "Total Marks", "Date", "Answersheet URL"],
+      ["Test Name", "Subject", "Marks Obtained", "Total Marks", "Date", "Answersheet"],
       ...testResults.map(r => [
         r.tests?.name,
         r.tests?.subject,
         r.marks_obtained,
         r.tests?.total_marks,
         format(new Date(r.date_taken), "PPP"),
-        r.publicUrl || "No file"
+        r.answersheet_url || ""
       ])
     ].map(row => row.join(",")).join("\n");
 
@@ -269,7 +247,7 @@ export default function StudentReport() {
 
       {selectedStudent && (
         <>
-          {/* Date Range & Subject Filters */}
+          {/* Filters */}
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardContent className="pt-6">
@@ -291,14 +269,23 @@ export default function StudentReport() {
 
             <Card>
               <CardContent className="pt-6">
-                <Label>Filter by Subject (Test Results)</Label>
+                <Label>Filter by Subject (Test)</Label>
                 <Select value={subjectFilter} onValueChange={setSubjectFilter}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Subjects</SelectItem>
-                    {subjects.map(subject => (
+                    {subjects.map((subject) => (
+                      <SelectItem key={subject} value={subject}>{subject}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Label className="mt-4">Filter by Subject (Chapter)</Label>
+                <Select value={chapterSubjectFilter} onValueChange={setChapterSubjectFilter}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Subjects</SelectItem>
+                    {subjects.map((subject) => (
                       <SelectItem key={subject} value={subject}>{subject}</SelectItem>
                     ))}
                   </SelectContent>
@@ -311,8 +298,7 @@ export default function StudentReport() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <CalendarIcon className="h-5 w-5" />
-                Attendance Overview
+                <CalendarIcon className="h-5 w-5" /> Attendance Overview
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -341,28 +327,14 @@ export default function StudentReport() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <BookOpen className="h-5 w-5" />
-                Chapter Progress
+                <BookOpen className="h-5 w-5" /> Chapter Progress
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Label>Filter by Subject (Chapters)</Label>
-              <Select value={chapterSubjectFilter} onValueChange={setChapterSubjectFilter}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Subjects</SelectItem>
-                  {subjects.map(subject => (
-                    <SelectItem key={subject} value={subject}>{subject}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <div className="grid gap-4 md:grid-cols-3 mb-4 mt-4">
+              <div className="grid gap-4 md:grid-cols-3 mb-4">
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">Total Chapters</p>
-                  <p className="text-2xl font-bold">{totalChaptersCount}</p>
+                  <p className="text-2xl font-bold">{filteredChapters.length}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">Completed</p>
@@ -373,14 +345,17 @@ export default function StudentReport() {
                   <p className="text-2xl font-bold">{chapterCompletionPercentage}%</p>
                 </div>
               </div>
-
-              {chapterProgress.map(progress => (
-                <div key={progress.id} className="flex justify-between p-3 border rounded-lg mt-2">
-                  <div>
-                    <p>{progress.chapters?.chapter_name}</p>
-                    <p className="text-sm text-muted-foreground">{progress.chapters?.subject}</p>
+              {chapterProgress.map((progress) => (
+                <div key={progress.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex-1">
+                    <p className="font-medium">{progress.chapters?.chapter_name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {progress.chapters?.subject} • {format(new Date(progress.date_completed), "PPP")}
+                    </p>
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-xs ${progress.completed ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}`}>
+                  <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                    progress.completed ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"
+                  }`}>
                     {progress.completed ? "Completed" : "In Progress"}
                   </div>
                 </div>
@@ -392,8 +367,7 @@ export default function StudentReport() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Test Results
+                <FileText className="h-5 w-5" /> Test Results
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -412,27 +386,30 @@ export default function StudentReport() {
                 </div>
               </div>
 
-              {testResults.map(result => (
-                <div key={result.id} className="flex items-center justify-between p-4 border rounded-lg mb-2">
+              {testResults.map((result) => (
+                <div key={result.id} className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex-1">
                     <p className="font-medium">{result.tests?.name}</p>
-                    <p className="text-sm text-muted-foreground">{result.tests?.subject} • {format(new Date(result.date_taken), "PPP")}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {result.tests?.subject} • {format(new Date(result.date_taken), "PPP")}
+                    </p>
                   </div>
-
-                  <div className="text-right mr-4">
-                    <p className="text-lg font-bold">{result.marks_obtained}/{result.tests?.total_marks}</p>
+                  <div className="text-right flex flex-col items-end gap-1">
+                    <p className="text-lg font-bold">
+                      {result.marks_obtained}/{result.tests?.total_marks}
+                    </p>
                     <p className="text-sm text-muted-foreground">
                       {Math.round((result.marks_obtained / (result.tests?.total_marks || 1)) * 100)}%
                     </p>
-                  </div>
-
-                  <div>
-                    {result.publicUrl ? (
-                      <a href={result.publicUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline text-sm">
+                    {result.answersheet_url && (
+                      <a
+                        href={result.answersheet_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 underline text-xs"
+                      >
                         View Answersheet
                       </a>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">No answersheet</span>
                     )}
                   </div>
                 </div>
@@ -444,8 +421,7 @@ export default function StudentReport() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Brain className="h-5 w-5" />
-                AI Summary
+                <Brain className="h-5 w-5" /> AI Summary
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -459,12 +435,14 @@ export default function StudentReport() {
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Generating...
                     </>
-                  ) : (
-                    "Generate Summary"
-                  )}
+                  ) : "Generate Summary"}
                 </Button>
               </div>
-              <Textarea value={aiSummary} readOnly placeholder="AI summary will appear here..." />
+              <Textarea
+                value={aiSummary}
+                readOnly
+                placeholder="AI summary will appear here..."
+              />
             </CardContent>
           </Card>
         </>
