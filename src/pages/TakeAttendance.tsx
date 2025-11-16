@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -32,6 +32,7 @@ export default function TakeAttendance() {
   const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [attendance, setAttendance] = useState<Record<string, AttendanceRecord>>({});
+  const [holidayFor, setHolidayFor] = useState<"" | "all" | string>("");
 
   const dateStr = format(selectedDate, "yyyy-MM-dd");
 
@@ -42,12 +43,7 @@ export default function TakeAttendance() {
         .from("students")
         .select("id, name, grade")
         .order("name");
-      
-      // Filter by center_id if user is not admin
-      if (user?.role !== 'admin' && user?.center_id) {
-        query = query.eq('center_id', user.center_id);
-      }
-      
+      if (user?.role !== 'admin' && user?.center_id) query = query.eq('center_id', user.center_id);
       const { data, error } = await query;
       if (error) throw error;
       return data as Student[];
@@ -67,12 +63,12 @@ export default function TakeAttendance() {
     enabled: !!dateStr,
   });
 
-  // Initialize attendance state when data is loaded
-  useState(() => {
-    if (existingAttendance && students) {
+  // Initialize attendance
+  useEffect(() => {
+    if (students) {
       const newAttendance: Record<string, AttendanceRecord> = {};
       students.forEach((student) => {
-        const record = existingAttendance.find((a) => a.student_id === student.id);
+        const record = existingAttendance?.find(a => a.student_id === student.id);
         newAttendance[student.id] = {
           present: record?.status === "Present",
           timeIn: record?.time_in || "",
@@ -82,16 +78,31 @@ export default function TakeAttendance() {
       });
       setAttendance(newAttendance);
     }
-  });
+  }, [students, existingAttendance]);
+
+  // Apply holiday automatically
+  useEffect(() => {
+    if (!students || !holidayFor) return;
+    const newAttendance = { ...attendance };
+    students.forEach((student) => {
+      if (holidayFor === "all" || student.grade === holidayFor) {
+        newAttendance[student.id] = {
+          ...newAttendance[student.id],
+          present: false,
+          timeIn: "",
+          timeOut: "",
+          studentId: student.id,
+        };
+      }
+    });
+    setAttendance(newAttendance);
+  }, [holidayFor, students]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!students) return;
-
-      // Delete existing attendance for this date
       await supabase.from("attendance").delete().eq("date", dateStr);
 
-      // Insert new attendance records
       const records = students.map((student) => ({
         student_id: student.id,
         date: dateStr,
@@ -105,12 +116,9 @@ export default function TakeAttendance() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
-      queryClient.invalidateQueries({ queryKey: ["today-attendance"] });
       toast.success("Attendance saved successfully!");
     },
-    onError: () => {
-      toast.error("Failed to save attendance");
-    },
+    onError: () => toast.error("Failed to save attendance"),
   });
 
   const handleToggle = (studentId: string) => {
@@ -142,12 +150,14 @@ export default function TakeAttendance() {
     if (!students) return;
     const newAttendance: Record<string, AttendanceRecord> = {};
     students.forEach((student) => {
-      newAttendance[student.id] = {
-        present: true,
-        timeIn: attendance[student.id]?.timeIn || "",
-        timeOut: attendance[student.id]?.timeOut || "",
-        studentId: student.id,
-      };
+      if (!(holidayFor === "all" || student.grade === holidayFor)) {
+        newAttendance[student.id] = {
+          present: true,
+          timeIn: attendance[student.id]?.timeIn || "",
+          timeOut: attendance[student.id]?.timeOut || "",
+          studentId: student.id,
+        };
+      }
     });
     setAttendance(newAttendance);
   };
@@ -156,12 +166,14 @@ export default function TakeAttendance() {
     if (!students) return;
     const newAttendance: Record<string, AttendanceRecord> = {};
     students.forEach((student) => {
-      newAttendance[student.id] = {
-        present: false,
-        timeIn: "",
-        timeOut: "",
-        studentId: student.id,
-      };
+      if (!(holidayFor === "all" || student.grade === holidayFor)) {
+        newAttendance[student.id] = {
+          present: false,
+          timeIn: "",
+          timeOut: "",
+          studentId: student.id,
+        };
+      }
     });
     setAttendance(newAttendance);
   };
@@ -171,6 +183,8 @@ export default function TakeAttendance() {
     saveMutation.mutate();
   };
 
+  const isStudentDisabled = (student: Student) => holidayFor === "all" || student.grade === holidayFor;
+
   return (
     <div className="space-y-6">
       <div>
@@ -178,10 +192,37 @@ export default function TakeAttendance() {
         <p className="text-muted-foreground">Mark students as present or absent</p>
       </div>
 
+      {/* Holiday Selector */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Mark Holiday</CardTitle>
+          <CardDescription>Select a grade or all students</CardDescription>
+        </CardHeader>
+        <CardContent className="flex gap-4 items-center">
+          <select
+            className="border p-2 rounded"
+            value={holidayFor}
+            onChange={(e) => setHolidayFor(e.target.value as "" | "all" | string)}
+          >
+            <option value="">None</option>
+            <option value="all">All Grades</option>
+            {students && Array.from(new Set(students.map(s => s.grade))).map(g => (
+              <option key={g} value={g}>{g}</option>
+            ))}
+          </select>
+          {holidayFor && (
+            <span className="text-sm text-red-500">
+              {holidayFor === "all" ? "All students marked holiday" : `Grade ${holidayFor} marked holiday`}
+            </span>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Date Picker */}
       <Card>
         <CardHeader>
           <CardTitle>Select Date</CardTitle>
-          <CardDescription>Choose the date for attendance recording</CardDescription>
+          <CardDescription>Choose the date for attendance</CardDescription>
         </CardHeader>
         <CardContent>
           <Popover>
@@ -194,7 +235,7 @@ export default function TakeAttendance() {
                 )}
               >
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
+                {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
@@ -210,6 +251,7 @@ export default function TakeAttendance() {
         </CardContent>
       </Card>
 
+      {/* Attendance Form */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -218,12 +260,8 @@ export default function TakeAttendance() {
               <CardDescription>Check the box for students who are present</CardDescription>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={markAllPresent}>
-                Mark All Present
-              </Button>
-              <Button variant="outline" size="sm" onClick={markAllAbsent}>
-                Mark All Absent
-              </Button>
+              <Button variant="outline" size="sm" onClick={markAllPresent}>Mark All Present</Button>
+              <Button variant="outline" size="sm" onClick={markAllAbsent}>Mark All Absent</Button>
             </div>
           </div>
         </CardHeader>
@@ -231,22 +269,17 @@ export default function TakeAttendance() {
           {students && students.length > 0 ? (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-3">
-                {students.map((student) => (
-                  <div
-                    key={student.id}
-                    className="rounded-lg border p-4 transition-colors hover:bg-muted/50"
-                  >
+                {students.map(student => (
+                  <div key={student.id} className="rounded-lg border p-4 transition-colors hover:bg-muted/50">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center space-x-3">
                         <Checkbox
                           id={student.id}
                           checked={attendance[student.id]?.present || false}
                           onCheckedChange={() => handleToggle(student.id)}
+                          disabled={isStudentDisabled(student)}
                         />
-                        <Label
-                          htmlFor={student.id}
-                          className="cursor-pointer font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                        >
+                        <Label htmlFor={student.id} className="cursor-pointer font-medium">
                           {student.name}
                         </Label>
                       </div>
@@ -254,26 +287,24 @@ export default function TakeAttendance() {
                     </div>
                     <div className="flex gap-4 ml-7">
                       <div className="flex-1">
-                        <Label htmlFor={`time-in-${student.id}`} className="text-xs text-muted-foreground">
-                          Time In
-                        </Label>
+                        <Label htmlFor={`time-in-${student.id}`} className="text-xs text-muted-foreground">Time In</Label>
                         <Input
                           id={`time-in-${student.id}`}
                           type="time"
                           value={attendance[student.id]?.timeIn || ""}
-                          onChange={(e) => handleTimeChange(student.id, "timeIn", e.target.value)}
+                          onChange={e => handleTimeChange(student.id, "timeIn", e.target.value)}
+                          disabled={isStudentDisabled(student)}
                           className="mt-1"
                         />
                       </div>
                       <div className="flex-1">
-                        <Label htmlFor={`time-out-${student.id}`} className="text-xs text-muted-foreground">
-                          Time Out
-                        </Label>
+                        <Label htmlFor={`time-out-${student.id}`} className="text-xs text-muted-foreground">Time Out</Label>
                         <Input
                           id={`time-out-${student.id}`}
                           type="time"
                           value={attendance[student.id]?.timeOut || ""}
-                          onChange={(e) => handleTimeChange(student.id, "timeOut", e.target.value)}
+                          onChange={e => handleTimeChange(student.id, "timeOut", e.target.value)}
+                          disabled={isStudentDisabled(student)}
                           className="mt-1"
                         />
                       </div>
@@ -281,14 +312,10 @@ export default function TakeAttendance() {
                   </div>
                 ))}
               </div>
-              <Button type="submit" className="w-full">
-                Save Attendance
-              </Button>
+              <Button type="submit" className="w-full">Save Attendance</Button>
             </form>
           ) : (
-            <p className="text-center text-muted-foreground">
-              No students registered yet. Please register students first.
-            </p>
+            <p className="text-center text-muted-foreground">No students registered yet.</p>
           )}
         </CardContent>
       </Card>
