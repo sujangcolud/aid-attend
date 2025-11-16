@@ -10,20 +10,24 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Shield, Power, PowerOff, Edit } from 'lucide-react';
+import { Plus, Shield, Power, PowerOff, Edit, Eye } from 'lucide-react';
 
 const AdminDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Dialog states
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+
+  // Center editing/viewing states
   const [editingCenter, setEditingCenter] = useState<any>(null);
-  const [editedCenterData, setEditedCenterData] = useState({
-    centerName: '',
-    address: ''
-  });
+  const [viewingCenter, setViewingCenter] = useState<any>(null);
+
+  const [editedCenterData, setEditedCenterData] = useState({ centerName: '', address: '' });
   const [newCenter, setNewCenter] = useState({
     centerName: '',
     address: '',
@@ -38,7 +42,7 @@ const AdminDashboard = () => {
     return null;
   }
 
-  // Fetch all centers
+  // Fetch all centers with users
   const { data: centers = [], isLoading } = useQuery({
     queryKey: ['centers-with-users'],
     queryFn: async () => {
@@ -46,7 +50,6 @@ const AdminDashboard = () => {
         .from('centers')
         .select('*, users(*)')
         .order('created_at', { ascending: false });
-      
       if (error) throw error;
       return data;
     }
@@ -58,52 +61,33 @@ const AdminDashboard = () => {
       const { data: functionData, error: functionError } = await supabase.functions.invoke('admin-create-center', {
         body: newCenter
       });
-
       if (functionError) throw functionError;
       if (!functionData.success) throw new Error(functionData.error);
       return functionData;
     },
     onSuccess: () => {
-      toast({
-        title: 'Center created',
-        description: 'New center has been created successfully',
-      });
+      toast({ title: 'Center created', description: 'New center has been created successfully' });
       setIsCreateDialogOpen(false);
       setNewCenter({ centerName: '', address: '', contactNumber: '', username: '', password: '' });
       queryClient.invalidateQueries({ queryKey: ['centers-with-users'] });
     },
     onError: (error: any) => {
-      toast({
-        title: 'Failed to create center',
-        description: error.message,
-        variant: 'destructive',
-      });
+      toast({ title: 'Failed to create center', description: error.message, variant: 'destructive' });
     }
   });
 
   // Toggle user status mutation
   const toggleStatusMutation = useMutation({
     mutationFn: async ({ userId, isActive }: { userId: string; isActive: boolean }) => {
-      const { error } = await supabase
-        .from('users')
-        .update({ is_active: !isActive })
-        .eq('id', userId);
-
+      const { error } = await supabase.from('users').update({ is_active: !isActive }).eq('id', userId);
       if (error) throw error;
     },
     onSuccess: () => {
-      toast({
-        title: 'Status updated',
-        description: 'User status has been updated successfully',
-      });
+      toast({ title: 'Status updated', description: 'User status has been updated successfully' });
       queryClient.invalidateQueries({ queryKey: ['centers-with-users'] });
     },
     onError: (error: any) => {
-      toast({
-        title: 'Failed to update status',
-        description: error.message,
-        variant: 'destructive',
-      });
+      toast({ title: 'Failed to update status', description: error.message, variant: 'destructive' });
     }
   });
 
@@ -112,39 +96,24 @@ const AdminDashboard = () => {
     mutationFn: async () => {
       const { error } = await supabase
         .from('centers')
-        .update({
-          center_name: editedCenterData.centerName,
-          address: editedCenterData.address
-        })
+        .update({ center_name: editedCenterData.centerName, address: editedCenterData.address })
         .eq('id', editingCenter.id);
-
       if (error) throw error;
     },
     onSuccess: () => {
-      toast({
-        title: 'Center updated',
-        description: 'Center details have been updated successfully',
-      });
+      toast({ title: 'Center updated', description: 'Center details have been updated successfully' });
       setIsEditDialogOpen(false);
       setEditingCenter(null);
       queryClient.invalidateQueries({ queryKey: ['centers-with-users'] });
     },
     onError: (error: any) => {
-      toast({
-        title: 'Failed to update center',
-        description: error.message,
-        variant: 'destructive',
-      });
+      toast({ title: 'Failed to update center', description: error.message, variant: 'destructive' });
     }
   });
 
   const handleCreateCenter = () => {
     if (!newCenter.centerName || !newCenter.username || !newCenter.password) {
-      toast({
-        title: 'Missing fields',
-        description: 'Please fill in all required fields',
-        variant: 'destructive',
-      });
+      toast({ title: 'Missing fields', description: 'Please fill in all required fields', variant: 'destructive' });
       return;
     }
     createCenterMutation.mutate();
@@ -152,20 +121,18 @@ const AdminDashboard = () => {
 
   const handleOpenEditDialog = (center: any) => {
     setEditingCenter(center);
-    setEditedCenterData({
-      centerName: center.center_name,
-      address: center.address || ''
-    });
+    setEditedCenterData({ centerName: center.center_name, address: center.address || '' });
     setIsEditDialogOpen(true);
+  };
+
+  const handleOpenViewDialog = (center: any) => {
+    setViewingCenter(center);
+    setIsViewDialogOpen(true);
   };
 
   const handleUpdateCenter = () => {
     if (!editedCenterData.centerName) {
-      toast({
-        title: 'Missing fields',
-        description: 'Center name is required',
-        variant: 'destructive',
-      });
+      toast({ title: 'Missing fields', description: 'Center name is required', variant: 'destructive' });
       return;
     }
     updateCenterMutation.mutate();
@@ -174,6 +141,7 @@ const AdminDashboard = () => {
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto">
+        {/* Header & Create Center */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
             <Shield className="h-8 w-8 text-destructive" />
@@ -189,9 +157,7 @@ const AdminDashboard = () => {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create New Center</DialogTitle>
-                <DialogDescription>
-                  Add a new tuition center with login credentials
-                </DialogDescription>
+                <DialogDescription>Add a new tuition center with login credentials</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
@@ -248,13 +214,12 @@ const AdminDashboard = () => {
           </Dialog>
         </div>
 
+        {/* Edit Center Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Edit Center</DialogTitle>
-              <DialogDescription>
-                Update center name and address
-              </DialogDescription>
+              <DialogDescription>Update center name and address</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
@@ -282,6 +247,35 @@ const AdminDashboard = () => {
           </DialogContent>
         </Dialog>
 
+        {/* View Center Dialog */}
+        <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>View Center Details</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              {viewingCenter ? (
+                <>
+                  <p><strong>Center Name:</strong> {viewingCenter.center_name}</p>
+                  <p><strong>Address:</strong> {viewingCenter.address || '-'}</p>
+                  <p><strong>Contact:</strong> {viewingCenter.contact_number || '-'}</p>
+                  <p><strong>Created At:</strong> {new Date(viewingCenter.created_at).toLocaleString()}</p>
+                  {viewingCenter.users?.map((user: any) => (
+                    <div key={user.id} className="mt-2 border-t pt-2">
+                      <p><strong>Username:</strong> {user.username}</p>
+                      <p><strong>Status:</strong> {user.is_active ? 'Active' : 'Inactive'}</p>
+                      <p><strong>Last Login:</strong> {user.last_login ? new Date(user.last_login).toLocaleString() : 'Never'}</p>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <p>No center selected</p>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Centers Table */}
         <Card>
           <CardHeader>
             <CardTitle>All Centers</CardTitle>
@@ -313,11 +307,7 @@ const AdminDashboard = () => {
                         <TableCell>{center.address || '-'}</TableCell>
                         <TableCell>{center.contact_number || '-'}</TableCell>
                         <TableCell>{centerUser?.username || '-'}</TableCell>
-                        <TableCell>
-                          {centerUser?.last_login 
-                            ? new Date(centerUser.last_login).toLocaleDateString()
-                            : 'Never'}
-                        </TableCell>
+                        <TableCell>{centerUser?.last_login ? new Date(centerUser.last_login).toLocaleDateString() : 'Never'}</TableCell>
                         <TableCell>
                           {centerUser?.is_active ? (
                             <span className="text-green-600 font-medium">Active</span>
@@ -327,6 +317,15 @@ const AdminDashboard = () => {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2">
+                            {/* View button */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleOpenViewDialog(center)}
+                            >
+                              <Eye className="h-4 w-4 mr-1" /> View
+                            </Button>
+                            {/* Edit button */}
                             <Button
                               variant="ghost"
                               size="sm"
@@ -334,6 +333,7 @@ const AdminDashboard = () => {
                             >
                               <Edit className="h-4 w-4 mr-1" /> Edit
                             </Button>
+                            {/* Activate/Deactivate */}
                             {centerUser && (
                               <Button
                                 variant="ghost"
