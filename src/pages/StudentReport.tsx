@@ -16,7 +16,6 @@ export default function StudentReport() {
   const { user } = useAuth();
 
   const [selectedStudentId, setSelectedStudentId] = useState<string>("");
-  const [selectedGrade, setSelectedGrade] = useState<string>("all"); // Grade filter
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
@@ -24,7 +23,7 @@ export default function StudentReport() {
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
   const [aiSummary, setAiSummary] = useState<string>("");
 
-  // Fetch students
+  // Fetch students (center-specific)
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
@@ -35,9 +34,6 @@ export default function StudentReport() {
       return data;
     },
   });
-
-  // Filter students by grade
-  const filteredStudents = students.filter(s => selectedGrade === "all" || s.grade === selectedGrade);
 
   // Fetch attendance
   const { data: attendanceData = [] } = useQuery({
@@ -71,7 +67,7 @@ export default function StudentReport() {
     enabled: !!selectedStudentId,
   });
 
-  // Fetch all chapters
+  // Fetch all chapters (center-specific)
   const { data: allChapters = [] } = useQuery({
     queryKey: ["all-chapters", user?.center_id],
     queryFn: async () => {
@@ -118,7 +114,7 @@ export default function StudentReport() {
     ...testResults.map(t => t.tests?.subject).filter(Boolean)
   ]));
 
-  const selectedStudent = filteredStudents.find((s) => s.id === selectedStudentId);
+  const selectedStudent = students.find((s) => s.id === selectedStudentId);
 
   // AI Summary mutation
   const generateSummaryMutation = useMutation({
@@ -188,74 +184,71 @@ export default function StudentReport() {
         )}
       </div>
 
-      {/* Filters */}
-      <div className="grid gap-4 md:grid-cols-3">
-        {/* Student Selector */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Select Student</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a student" />
-              </SelectTrigger>
-              <SelectContent>
-                {filteredStudents.map((student) => (
-                  <SelectItem key={student.id} value={student.id}>
-                    {student.name} - Grade {student.grade}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </CardContent>
-        </Card>
+      {/* Student Selector */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Select Student</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Choose a student" />
+            </SelectTrigger>
+            <SelectContent>
+              {students.map((student) => (
+                <SelectItem key={student.id} value={student.id}>
+                  {student.name} - Grade {student.grade}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
 
-        {/* Grade Filter */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Filter by Grade</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Select value={selectedGrade} onValueChange={setSelectedGrade}>
-              <SelectTrigger>
-                <SelectValue placeholder="All Grades" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Grades</SelectItem>
-                {Array.from(new Set(students.map(s => s.grade))).map(grade => (
-                  <SelectItem key={grade} value={grade}>{grade}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </CardContent>
-        </Card>
-
-        {/* Subject Filter */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Filter by Subject</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Select value={subjectFilter} onValueChange={setSubjectFilter}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Subjects</SelectItem>
-                {subjects.map(subject => (
-                  <SelectItem key={subject} value={subject}>{subject}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Rest of the report sections: Attendance, Chapters, Tests, AI Summary */}
+      {/* All sections visible only when student selected */}
       {selectedStudent && (
         <>
-          {/* Attendance Overview */}
+          {/* Date Range & Subject Filter */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardContent className="pt-6">
+                <Label>Date Range</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="date"
+                    value={format(dateRange.from, "yyyy-MM-dd")}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, from: new Date(e.target.value) }))}
+                  />
+                  <Input
+                    type="date"
+                    value={format(dateRange.to, "yyyy-MM-dd")}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, to: new Date(e.target.value) }))}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-6">
+                <Label>Filter by Subject</Label>
+                <Select value={subjectFilter} onValueChange={setSubjectFilter}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Subjects</SelectItem>
+                    {subjects.map((subject) => (
+                      <SelectItem key={subject} value={subject}>
+                        {subject}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Attendance */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">

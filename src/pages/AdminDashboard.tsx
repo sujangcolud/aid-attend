@@ -10,29 +10,26 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Shield, Power, PowerOff, Edit, Eye } from 'lucide-react';
+import { Plus, Shield, Power, PowerOff, Edit } from 'lucide-react';
 
 const AdminDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingCenter, setEditingCenter] = useState<any>(null);
-
+  const [editedCenterData, setEditedCenterData] = useState({
+    centerName: '',
+    address: ''
+  });
   const [newCenter, setNewCenter] = useState({
     centerName: '',
     address: '',
     contactNumber: '',
     username: '',
     password: ''
-  });
-
-  const [editedCenterData, setEditedCenterData] = useState({
-    centerName: '',
-    address: ''
   });
 
   // Redirect if not admin
@@ -49,6 +46,7 @@ const AdminDashboard = () => {
         .from('centers')
         .select('*, users(*)')
         .order('created_at', { ascending: false });
+      
       if (error) throw error;
       return data;
     }
@@ -176,24 +174,24 @@ const AdminDashboard = () => {
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
             <Shield className="h-8 w-8 text-destructive" />
             <h1 className="text-3xl font-bold">Admin Dashboard</h1>
           </div>
-
-          {/* Create Center Dialog */}
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button>
-                <Plus className="h-4 w-4 mr-2" /> Create Center
+                <Plus className="h-4 w-4 mr-2" />
+                Create Center
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create New Center</DialogTitle>
-                <DialogDescription>Add a new tuition center with login credentials</DialogDescription>
+                <DialogDescription>
+                  Add a new tuition center with login credentials
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
@@ -250,12 +248,13 @@ const AdminDashboard = () => {
           </Dialog>
         </div>
 
-        {/* Edit Center Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Edit Center</DialogTitle>
-              <DialogDescription>Update center name and address</DialogDescription>
+              <DialogDescription>
+                Update center name and address
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
@@ -283,7 +282,6 @@ const AdminDashboard = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Centers Table */}
         <Card>
           <CardHeader>
             <CardTitle>All Centers</CardTitle>
@@ -315,7 +313,11 @@ const AdminDashboard = () => {
                         <TableCell>{center.address || '-'}</TableCell>
                         <TableCell>{center.contact_number || '-'}</TableCell>
                         <TableCell>{centerUser?.username || '-'}</TableCell>
-                        <TableCell>{centerUser?.last_login ? new Date(centerUser.last_login).toLocaleDateString() : 'Never'}</TableCell>
+                        <TableCell>
+                          {centerUser?.last_login 
+                            ? new Date(centerUser.last_login).toLocaleDateString()
+                            : 'Never'}
+                        </TableCell>
                         <TableCell>
                           {centerUser?.is_active ? (
                             <span className="text-green-600 font-medium">Active</span>
@@ -325,20 +327,21 @@ const AdminDashboard = () => {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2">
-                            {/* View Button */}
-                            <Button variant="ghost" size="sm" onClick={() => navigate(`/center/${center.id}`)}>
-                              <Eye className="h-4 w-4 mr-1" /> View
-                            </Button>
-                            {/* Edit Button */}
-                            <Button variant="ghost" size="sm" onClick={() => handleOpenEditDialog(center)}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleOpenEditDialog(center)}
+                            >
                               <Edit className="h-4 w-4 mr-1" /> Edit
                             </Button>
-                            {/* Toggle Status */}
                             {centerUser && (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => toggleStatusMutation.mutate({ userId: centerUser.id, isActive: centerUser.is_active })}
+                                onClick={() => toggleStatusMutation.mutate({
+                                  userId: centerUser.id,
+                                  isActive: centerUser.is_active
+                                })}
                               >
                                 {centerUser.is_active ? (
                                   <><PowerOff className="h-4 w-4 mr-1" /> Deactivate</>
