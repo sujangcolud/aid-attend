@@ -7,20 +7,20 @@ import { Users, CheckCircle2, XCircle, TrendingUp } from "lucide-react";
 
 export default function Dashboard() {
   const { user, loading } = useAuth();
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toISOString().split("T")[0]; // yyyy-mm-dd
 
   const centerId = user?.center_id;
   const role = user?.role;
 
-  // -------------------------------------------------------------------
-  // 1️⃣ TOTAL STUDENTS COUNT — FIXED (Admin gets all, Center gets own)
-  // -------------------------------------------------------------------
-  const { data: studentsCount = 0 } = useQuery({
-    queryKey: ["students-count", role, centerId],
+  // ---------------------------
+  // 1️⃣ TOTAL STUDENTS COUNT
+  // ---------------------------
+  const { data: studentsCount } = useQuery({
+    queryKey: ["students-count", centerId],
     queryFn: async () => {
       let query = supabase
         .from("students")
-        .select("id", { count: "exact", head: true });
+        .select("*", { count: "exact", head: true });
 
       if (role !== "admin") {
         query = query.eq("center_id", centerId);
@@ -28,21 +28,20 @@ export default function Dashboard() {
 
       const { count, error } = await query;
       if (error) throw error;
-
       return count || 0;
     },
     enabled: !!user && !loading,
   });
 
-  // -------------------------------------------------------------------
-  // 2️⃣ TODAY ATTENDANCE — FIXED (Must filter by center_id)
-  // -------------------------------------------------------------------
-  const { data: todayAttendance = [] } = useQuery({
-    queryKey: ["today-attendance", today, role, centerId],
+  // ---------------------------
+  // 2️⃣ TODAY'S ATTENDANCE
+  // ---------------------------
+  const { data: todayAttendance } = useQuery({
+    queryKey: ["today-attendance", today, centerId],
     queryFn: async () => {
       let query = supabase
         .from("attendance")
-        .select("status, center_id")
+        .select("status")
         .eq("date", today);
 
       if (role !== "admin") {
@@ -51,33 +50,22 @@ export default function Dashboard() {
 
       const { data, error } = await query;
       if (error) throw error;
-
       return data || [];
     },
     enabled: !!user && !loading,
   });
 
-  // -------------------------------------------------------------------
-  // 3️⃣ CORRECT COUNTS — FIXED
-  // -------------------------------------------------------------------
-  const presentCount = todayAttendance.filter(
-    (a) => a.status === "Present"
-  ).length;
+  const presentCount = todayAttendance?.filter((a) => a.status === "Present").length || 0;
+  const absentCount = todayAttendance?.filter((a) => a.status === "Absent").length || 0;
+  const attendanceRate = studentsCount ? Math.round((presentCount / studentsCount) * 100) : 0;
 
-  const absentCount = todayAttendance.filter(
-    (a) => a.status === "Absent"
-  ).length;
-
-  const attendanceRate =
-    studentsCount > 0 ? Math.round((presentCount / studentsCount) * 100) : 0;
-
-  // -------------------------------------------------------------------
-  // 4️⃣ Stats Data
-  // -------------------------------------------------------------------
+  // ---------------------------
+  // 3️⃣ STATS CARDS DATA
+  // ---------------------------
   const stats = [
     {
       title: "Total Students",
-      value: studentsCount,
+      value: studentsCount || 0,
       icon: Users,
       color: "text-primary",
       bgColor: "bg-primary/10",
@@ -122,9 +110,7 @@ export default function Dashboard() {
           return (
             <Card key={stat.title} className="transition-all hover:shadow-md">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  {stat.title}
-                </CardTitle>
+                <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
                 <div className={`rounded-lg p-2 ${stat.bgColor}`}>
                   <Icon className={`h-4 w-4 ${stat.color}`} />
                 </div>
