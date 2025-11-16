@@ -18,16 +18,10 @@ const AdminDashboard = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Dialog states
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
-
-  // Center editing/viewing states
   const [editingCenter, setEditingCenter] = useState<any>(null);
-  const [viewingCenter, setViewingCenter] = useState<any>(null);
 
-  const [editedCenterData, setEditedCenterData] = useState({ centerName: '', address: '' });
   const [newCenter, setNewCenter] = useState({
     centerName: '',
     address: '',
@@ -36,13 +30,18 @@ const AdminDashboard = () => {
     password: ''
   });
 
+  const [editedCenterData, setEditedCenterData] = useState({
+    centerName: '',
+    address: ''
+  });
+
   // Redirect if not admin
   if (user?.role !== 'admin') {
     navigate('/');
     return null;
   }
 
-  // Fetch all centers with users
+  // Fetch all centers
   const { data: centers = [], isLoading } = useQuery({
     queryKey: ['centers-with-users'],
     queryFn: async () => {
@@ -61,33 +60,52 @@ const AdminDashboard = () => {
       const { data: functionData, error: functionError } = await supabase.functions.invoke('admin-create-center', {
         body: newCenter
       });
+
       if (functionError) throw functionError;
       if (!functionData.success) throw new Error(functionData.error);
       return functionData;
     },
     onSuccess: () => {
-      toast({ title: 'Center created', description: 'New center has been created successfully' });
+      toast({
+        title: 'Center created',
+        description: 'New center has been created successfully',
+      });
       setIsCreateDialogOpen(false);
       setNewCenter({ centerName: '', address: '', contactNumber: '', username: '', password: '' });
       queryClient.invalidateQueries({ queryKey: ['centers-with-users'] });
     },
     onError: (error: any) => {
-      toast({ title: 'Failed to create center', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Failed to create center',
+        description: error.message,
+        variant: 'destructive',
+      });
     }
   });
 
   // Toggle user status mutation
   const toggleStatusMutation = useMutation({
     mutationFn: async ({ userId, isActive }: { userId: string; isActive: boolean }) => {
-      const { error } = await supabase.from('users').update({ is_active: !isActive }).eq('id', userId);
+      const { error } = await supabase
+        .from('users')
+        .update({ is_active: !isActive })
+        .eq('id', userId);
+
       if (error) throw error;
     },
     onSuccess: () => {
-      toast({ title: 'Status updated', description: 'User status has been updated successfully' });
+      toast({
+        title: 'Status updated',
+        description: 'User status has been updated successfully',
+      });
       queryClient.invalidateQueries({ queryKey: ['centers-with-users'] });
     },
     onError: (error: any) => {
-      toast({ title: 'Failed to update status', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Failed to update status',
+        description: error.message,
+        variant: 'destructive',
+      });
     }
   });
 
@@ -96,24 +114,39 @@ const AdminDashboard = () => {
     mutationFn: async () => {
       const { error } = await supabase
         .from('centers')
-        .update({ center_name: editedCenterData.centerName, address: editedCenterData.address })
+        .update({
+          center_name: editedCenterData.centerName,
+          address: editedCenterData.address
+        })
         .eq('id', editingCenter.id);
+
       if (error) throw error;
     },
     onSuccess: () => {
-      toast({ title: 'Center updated', description: 'Center details have been updated successfully' });
+      toast({
+        title: 'Center updated',
+        description: 'Center details have been updated successfully',
+      });
       setIsEditDialogOpen(false);
       setEditingCenter(null);
       queryClient.invalidateQueries({ queryKey: ['centers-with-users'] });
     },
     onError: (error: any) => {
-      toast({ title: 'Failed to update center', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Failed to update center',
+        description: error.message,
+        variant: 'destructive',
+      });
     }
   });
 
   const handleCreateCenter = () => {
     if (!newCenter.centerName || !newCenter.username || !newCenter.password) {
-      toast({ title: 'Missing fields', description: 'Please fill in all required fields', variant: 'destructive' });
+      toast({
+        title: 'Missing fields',
+        description: 'Please fill in all required fields',
+        variant: 'destructive',
+      });
       return;
     }
     createCenterMutation.mutate();
@@ -121,18 +154,20 @@ const AdminDashboard = () => {
 
   const handleOpenEditDialog = (center: any) => {
     setEditingCenter(center);
-    setEditedCenterData({ centerName: center.center_name, address: center.address || '' });
+    setEditedCenterData({
+      centerName: center.center_name,
+      address: center.address || ''
+    });
     setIsEditDialogOpen(true);
-  };
-
-  const handleOpenViewDialog = (center: any) => {
-    setViewingCenter(center);
-    setIsViewDialogOpen(true);
   };
 
   const handleUpdateCenter = () => {
     if (!editedCenterData.centerName) {
-      toast({ title: 'Missing fields', description: 'Center name is required', variant: 'destructive' });
+      toast({
+        title: 'Missing fields',
+        description: 'Center name is required',
+        variant: 'destructive',
+      });
       return;
     }
     updateCenterMutation.mutate();
@@ -141,17 +176,18 @@ const AdminDashboard = () => {
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header & Create Center */}
+        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
             <Shield className="h-8 w-8 text-destructive" />
             <h1 className="text-3xl font-bold">Admin Dashboard</h1>
           </div>
+
+          {/* Create Center Dialog */}
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Create Center
+                <Plus className="h-4 w-4 mr-2" /> Create Center
               </Button>
             </DialogTrigger>
             <DialogContent>
@@ -247,34 +283,6 @@ const AdminDashboard = () => {
           </DialogContent>
         </Dialog>
 
-        {/* View Center Dialog */}
-        <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>View Center Details</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              {viewingCenter ? (
-                <>
-                  <p><strong>Center Name:</strong> {viewingCenter.center_name}</p>
-                  <p><strong>Address:</strong> {viewingCenter.address || '-'}</p>
-                  <p><strong>Contact:</strong> {viewingCenter.contact_number || '-'}</p>
-                  <p><strong>Created At:</strong> {new Date(viewingCenter.created_at).toLocaleString()}</p>
-                  {viewingCenter.users?.map((user: any) => (
-                    <div key={user.id} className="mt-2 border-t pt-2">
-                      <p><strong>Username:</strong> {user.username}</p>
-                      <p><strong>Status:</strong> {user.is_active ? 'Active' : 'Inactive'}</p>
-                      <p><strong>Last Login:</strong> {user.last_login ? new Date(user.last_login).toLocaleString() : 'Never'}</p>
-                    </div>
-                  ))}
-                </>
-              ) : (
-                <p>No center selected</p>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
-
         {/* Centers Table */}
         <Card>
           <CardHeader>
@@ -317,31 +325,20 @@ const AdminDashboard = () => {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2">
-                            {/* View button */}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleOpenViewDialog(center)}
-                            >
+                            {/* View Button */}
+                            <Button variant="ghost" size="sm" onClick={() => navigate(`/center/${center.id}`)}>
                               <Eye className="h-4 w-4 mr-1" /> View
                             </Button>
-                            {/* Edit button */}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleOpenEditDialog(center)}
-                            >
+                            {/* Edit Button */}
+                            <Button variant="ghost" size="sm" onClick={() => handleOpenEditDialog(center)}>
                               <Edit className="h-4 w-4 mr-1" /> Edit
                             </Button>
-                            {/* Activate/Deactivate */}
+                            {/* Toggle Status */}
                             {centerUser && (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => toggleStatusMutation.mutate({
-                                  userId: centerUser.id,
-                                  isActive: centerUser.is_active
-                                })}
+                                onClick={() => toggleStatusMutation.mutate({ userId: centerUser.id, isActive: centerUser.is_active })}
                               >
                                 {centerUser.is_active ? (
                                   <><PowerOff className="h-4 w-4 mr-1" /> Deactivate</>
