@@ -7,90 +7,57 @@ import { Users, CheckCircle2, XCircle, TrendingUp } from "lucide-react";
 
 export default function Dashboard() {
   const { user, loading } = useAuth();
-  const today = new Date().toISOString().split("T")[0]; // yyyy-mm-dd
+  const today = new Date().toISOString().split("T")[0];
 
   const centerId = user?.center_id;
-  const role = user?.role;
 
   // ---------------------------
-  // 1️⃣ TOTAL STUDENTS COUNT
+  // 1️⃣ Fetch all students for center
   // ---------------------------
-  const { data: studentsCount } = useQuery({
-    queryKey: ["students-count", centerId],
+  const { data: students = [] } = useQuery({
+    queryKey: ["students", centerId],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from("students")
-        .select("*", { count: "exact", head: true });
+        .select("id")
+        .eq("center_id", centerId);
 
-      if (role !== "admin") {
-        query = query.eq("center_id", centerId);
-      }
-
-      const { count, error } = await query;
-      if (error) throw error;
-      return count || 0;
-    },
-    enabled: !!user && !loading,
-  });
-
-  // ---------------------------
-  // 2️⃣ TODAY'S ATTENDANCE
-  // ---------------------------
-  const { data: todayAttendance } = useQuery({
-    queryKey: ["today-attendance", today, centerId],
-    queryFn: async () => {
-      let query = supabase
-        .from("attendance")
-        .select("status")
-        .eq("date", today);
-
-      if (role !== "admin") {
-        query = query.eq("center_id", centerId);
-      }
-
-      const { data, error } = await query;
       if (error) throw error;
       return data || [];
     },
     enabled: !!user && !loading,
   });
 
-  const presentCount = todayAttendance?.filter((a) => a.status === "Present").length || 0;
-  const absentCount = todayAttendance?.filter((a) => a.status === "Absent").length || 0;
-  const attendanceRate = studentsCount ? Math.round((presentCount / studentsCount) * 100) : 0;
+  // ---------------------------
+  // 2️⃣ Fetch today's attendance
+  // ---------------------------
+  const { data: attendance = [] } = useQuery({
+    queryKey: ["attendance", centerId, today],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("student_id, status")
+        .eq("date", today)
+        .eq("center_id", centerId);
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user && !loading,
+  });
 
   // ---------------------------
-  // 3️⃣ STATS CARDS DATA
+  // 3️⃣ Calculate counts
   // ---------------------------
+  const presentCount = attendance.filter(a => a.status === "Present").length;
+  const absentCount = students.length - presentCount;
+  const attendanceRate = students.length > 0 ? Math.round((presentCount / students.length) * 100) : 0;
+
   const stats = [
-    {
-      title: "Total Students",
-      value: studentsCount || 0,
-      icon: Users,
-      color: "text-primary",
-      bgColor: "bg-primary/10",
-    },
-    {
-      title: "Present Today",
-      value: presentCount,
-      icon: CheckCircle2,
-      color: "text-secondary",
-      bgColor: "bg-secondary/10",
-    },
-    {
-      title: "Absent Today",
-      value: absentCount,
-      icon: XCircle,
-      color: "text-destructive",
-      bgColor: "bg-destructive/10",
-    },
-    {
-      title: "Attendance Rate",
-      value: `${attendanceRate}%`,
-      icon: TrendingUp,
-      color: "text-accent",
-      bgColor: "bg-accent/10",
-    },
+    { title: "Total Students", value: students.length, icon: Users, color: "text-primary", bgColor: "bg-primary/10" },
+    { title: "Present Today", value: presentCount, icon: CheckCircle2, color: "text-secondary", bgColor: "bg-secondary/10" },
+    { title: "Absent Today", value: absentCount, icon: XCircle, color: "text-destructive", bgColor: "bg-destructive/10" },
+    { title: "Attendance Rate", value: `${attendanceRate}%`, icon: TrendingUp, color: "text-accent", bgColor: "bg-accent/10" },
   ];
 
   if (loading) return <p>Loading dashboard...</p>;
@@ -99,13 +66,11 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-        <p className="text-muted-foreground">
-          Welcome back! Here's today's attendance overview.
-        </p>
+        <p className="text-muted-foreground">Welcome back! Here's today's attendance overview.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => {
+        {stats.map(stat => {
           const Icon = stat.icon;
           return (
             <Card key={stat.title} className="transition-all hover:shadow-md">
