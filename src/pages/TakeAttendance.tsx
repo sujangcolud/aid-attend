@@ -34,6 +34,9 @@ export default function TakeAttendance() {
   const [attendance, setAttendance] = useState<Record<string, AttendanceRecord>>({});
   const [holidayFor, setHolidayFor] = useState<"" | "all" | string>("");
 
+  // NEW — grade filter (added as requested)
+  const [gradeFilter, setGradeFilter] = useState<string>("all");
+
   // Track holidays per date for frontend
   const [holidayMap, setHolidayMap] = useState<Record<string, "" | "all" | string>>({});
 
@@ -95,8 +98,6 @@ export default function TakeAttendance() {
       }
     });
     setAttendance(newAttendance);
-
-    // Update holidayMap for this date
     setHolidayMap(prev => ({ ...prev, [dateStr]: holidayFor }));
   }, [holidayFor, students, dateStr]);
 
@@ -163,12 +164,37 @@ export default function TakeAttendance() {
 
   const isStudentDisabled = (student: Student) => holidayFor === "all" || student.grade === holidayFor;
 
+  // FILTERED LIST (added only this — NO OTHER CHANGES)
+  const filteredStudents =
+    gradeFilter === "all"
+      ? students
+      : students?.filter((s) => s.grade === gradeFilter);
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Take Attendance</h2>
         <p className="text-muted-foreground">Mark students as present or absent</p>
       </div>
+
+      {/* Grade Filter (ADDED ONLY THIS COMPONENT) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Filter by Grade</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <select
+            className="border p-2 rounded"
+            value={gradeFilter}
+            onChange={(e) => setGradeFilter(e.target.value)}
+          >
+            <option value="all">All Grades</option>
+            {students && Array.from(new Set(students.map(s => s.grade))).map(g => (
+              <option key={g} value={g}>{g}</option>
+            ))}
+          </select>
+        </CardContent>
+      </Card>
 
       {/* Holiday Selector */}
       <Card>
@@ -244,9 +270,9 @@ export default function TakeAttendance() {
           </div>
         </CardHeader>
         <CardContent>
-          {students && students.length > 0 ? (
+          {filteredStudents && filteredStudents.length > 0 ? (
             <form onSubmit={handleSubmit} className="space-y-4">
-              {students.map(student => (
+              {filteredStudents.map(student => (
                 <div key={student.id} className="rounded-lg border p-4 transition-colors hover:bg-muted/50">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center space-x-3">
