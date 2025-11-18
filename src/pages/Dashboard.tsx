@@ -3,248 +3,347 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, CheckCircle2, XCircle, TrendingUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Users, CheckCircle2, XCircle, TrendingUp, BookOpen, FileText, CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
-import { useNavigate } from "react-router-dom";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export default function Dashboard() {
   const { user, loading } = useAuth();
   const today = new Date().toISOString().split("T")[0]; // yyyy-mm-dd
   const centerId = user?.center_id;
   const role = user?.role;
-  const navigate = useNavigate();
 
-  const [gradeFilter, setGradeFilter] = useState("all");
+  const [gradeFilterAbsentToday, setGradeFilterAbsentToday] = useState("all");
+  const [gradeFilterHighestAbsent, setGradeFilterHighestAbsent] = useState("all");
+  const [selectedStudentForModal, setSelectedStudentForModal] = useState(null);
 
   // ---------------------------
-  // 1️⃣ FETCH STUDENTS
+  // 1️⃣ Students Data
   // ---------------------------
-  const { data: students } = useQuery({
+  const { data: students = [] } = useQuery({
     queryKey: ["students", centerId],
     queryFn: async () => {
-      let query = supabase.from("students").select("id, name, grade");
+      let query = supabase.from("students").select("*").order("name");
       if (role !== "admin") query = query.eq("center_id", centerId);
       const { data, error } = await query;
       if (error) throw error;
-      return data || [];
+      return data;
     },
-    enabled: !!user && !loading,
   });
 
-  const filteredStudents = students?.filter(s => gradeFilter === "all" || s.grade === gradeFilter) || [];
-  const studentsCount = filteredStudents.length;
+  const studentIds = students.map((s) => s.id);
 
   // ---------------------------
-  // 2️⃣ FETCH ATTENDANCE TODAY
+  // 2️⃣ Attendance Today
   // ---------------------------
-  const { data: attendanceToday } = useQuery({
+  const { data: todayAttendance = [] } = useQuery({
     queryKey: ["today-attendance", today, centerId],
     queryFn: async () => {
-      if (!filteredStudents || filteredStudents.length === 0) return [];
-      const studentIds = filteredStudents.map(s => s.id);
+      if (!studentIds.length) return [];
       const { data, error } = await supabase
         .from("attendance")
-        .select("student_id, status")
-        .in("student_id", studentIds)
-        .eq("date", today);
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!filteredStudents && filteredStudents.length > 0,
-  });
-
-  const presentStudents = filteredStudents.filter(s =>
-    attendanceToday?.some(a => a.student_id === s.id && a.status === "Present")
-  );
-  const absentStudents = filteredStudents.filter(s =>
-    !attendanceToday?.some(a => a.student_id === s.id && a.status === "Present")
-  );
-
-  // ---------------------------
-  // 3️⃣ FETCH ALL-TIME ATTENDANCE TO CALCULATE ABSENT RATE
-  // ---------------------------
-  const { data: allAttendance } = useQuery({
-    queryKey: ["all-attendance", centerId],
-    queryFn: async () => {
-      if (!filteredStudents || filteredStudents.length === 0) return [];
-      const studentIds = filteredStudents.map(s => s.id);
-      const { data, error } = await supabase
-        .from("attendance")
-        .select("student_id, status")
+        .select("*")
+        .eq("date", today)
         .in("student_id", studentIds);
       if (error) throw error;
       return data || [];
     },
-    enabled: !!filteredStudents && filteredStudents.length > 0,
+    enabled: studentIds.length > 0,
   });
 
-  const absentRates: Record<string, number> = {};
-  filteredStudents.forEach(s => {
-    const studentAttendance = allAttendance?.filter(a => a.student_id === s.id) || [];
-    const total = studentAttendance.length;
-    const absentCount = studentAttendance.filter(a => a.status === "Absent").length;
-    absentRates[s.id] = total > 0 ? Math.round((absentCount / total) * 100) : 0;
+  const presentCount = todayAttendance.filter((a) => a.status === "Present").length;
+  const absentCount = Math.max(0, (students?.length || 0) - presentCount);
+  const absentRate = students?.length ? Math.round((absentCount / students.length) * 100) : 0;
+
+  // ---------------------------
+  // 3️⃣ Stats Cards
+  // ---------------------------
+  const stats = [
+    {
+      title: "Total Students",
+      value: students.length || 0,
+      icon: Users,
+      color: "text-primary",
+      bgColor: "bg-primary/10",
+    },
+    {
+      title: "Present Today",
+      value: presentCount,
+      icon: CheckCircle2,
+      color: "text-secondary",
+      bgColor: "bg-secondary/10",
+    },
+    {
+      title: "Absent Today",
+      value: absentCount,
+      icon: XCircle,
+      color: "text-destructive",
+      bgColor: "bg-destructive/10",
+    },
+    {
+      title: "Absent Rate",
+      value: `${absentRate}%`,
+      icon: TrendingUp,
+      color: "text-accent",
+      bgColor: "bg-accent/10",
+    },
+  ];
+
+  // ---------------------------
+  // 4️⃣ Absent Students Today Table
+  // ---------------------------
+  const absentStudentsToday = students
+    .map((student) => {
+      const attendance = todayAttendance.find((a) => a.student_id === student.id);
+      return {
+        ...student,
+        status: attendance?.status || "Absent",
+      };
+    })
+    .filter((s) => s.status === "Absent")
+    .filter((s) => gradeFilterAbsentToday === "all" || s.grade === gradeFilterAbsentToday);
+
+  // ---------------------------
+  // 5️⃣ Highest Absentee Students
+  // ---------------------------
+  const { data: allAttendance = [] } = useQuery({
+    queryKey: ["all-attendance", centerId],
+    queryFn: async () => {
+      if (!studentIds.length) return [];
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("*")
+        .in("student_id", studentIds);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: studentIds.length > 0,
   });
 
-  const overallAbsentRate = studentsCount
-    ? Math.round((absentStudents.length / studentsCount) * 100)
-    : 0;
-
-  // Students sorted by highest absent rate
-  const highestAbsentees = [...filteredStudents].sort(
-    (a, b) => (absentRates[b.id] || 0) - (absentRates[a.id] || 0)
-  );
+  const highestAbsentStudents = students
+    .map((student) => {
+      const studentAttendance = allAttendance.filter((a) => a.student_id === student.id);
+      const total = studentAttendance.length;
+      const absent = studentAttendance.filter((a) => a.status === "Absent").length;
+      const percentage = total > 0 ? Math.round((absent / total) * 100) : 0;
+      return { ...student, total, absent, percentage };
+    })
+    .filter((s) => gradeFilterHighestAbsent === "all" || s.grade === gradeFilterHighestAbsent)
+    .sort((a, b) => b.percentage - a.percentage);
 
   if (loading) return <p>Loading dashboard...</p>;
 
-  const grades = [...new Set(students?.map(s => s.grade))];
+  const grades = Array.from(new Set(students.map((s) => s.grade)));
 
   return (
     <div className="space-y-6">
-      {/* Dashboard Title */}
+      {/* Header */}
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-        <p className="text-muted-foreground">
-          Welcome back! Here's today's attendance overview.
-        </p>
+        <p className="text-muted-foreground">Welcome back! Here's today's attendance overview.</p>
       </div>
 
-      {/* Top Cards */}
+      {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Students</CardTitle>
-            <div className="rounded-lg p-2 bg-primary/10">
-              <Users className="h-4 w-4 text-primary" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{studentsCount}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Present Today</CardTitle>
-            <div className="rounded-lg p-2 bg-secondary/10">
-              <CheckCircle2 className="h-4 w-4 text-secondary" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{presentStudents.length}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Absent Today</CardTitle>
-            <div className="rounded-lg p-2 bg-destructive/10">
-              <XCircle className="h-4 w-4 text-destructive" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{absentStudents.length}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Absent Rate</CardTitle>
-            <div className="rounded-lg p-2 bg-accent/10">
-              <TrendingUp className="h-4 w-4 text-accent" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{overallAbsentRate}%</div>
-          </CardContent>
-        </Card>
+        {stats.map((stat) => {
+          const Icon = stat.icon;
+          return (
+            <Card key={stat.title} className="transition-all hover:shadow-md">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+                <div className={`rounded-lg p-2 ${stat.bgColor}`}>
+                  <Icon className={`h-4 w-4 ${stat.color}`} />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stat.value}</div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
-      {/* Grade Filter */}
-      <div className="flex gap-4">
-        <Select value={gradeFilter} onValueChange={setGradeFilter}>
-          <SelectTrigger className="w-32">
-            <SelectValue placeholder="Select Grade" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Grades</SelectItem>
-            {grades.map(g => (
-              <SelectItem key={g} value={g}>
-                {g}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Absent Students Today Table */}
+      {/* 1️⃣ Absent Today Table */}
       <Card>
-        <CardHeader>
-          <CardTitle>Absent Students Today</CardTitle>
+        <CardHeader className="flex items-center justify-between">
+          <div>
+            <CardTitle>Absent Students Today</CardTitle>
+          </div>
+          <Select value={gradeFilterAbsentToday} onValueChange={setGradeFilterAbsentToday}>
+            <SelectTrigger className="w-32">
+              <SelectValue placeholder="Select Grade" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Grades</SelectItem>
+              {grades.map((g) => (
+                <SelectItem key={g} value={g}>{g}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </CardHeader>
-        <CardContent className="max-h-96 overflow-y-auto">
-          {absentStudents.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Grade</TableHead>
-                  <TableHead>Absent Rate %</TableHead>
+        <CardContent className="overflow-y-auto max-h-80">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Grade</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {absentStudentsToday.map((s) => (
+                <TableRow key={s.id} className="cursor-pointer" onClick={() => setSelectedStudentForModal(s)}>
+                  <TableCell>{s.name}</TableCell>
+                  <TableCell>{s.grade}</TableCell>
+                  <TableCell>{s.status}</TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {absentStudents.map(student => (
-                  <TableRow
-                    key={student.id}
-                    className="cursor-pointer"
-                    onClick={() => navigate(`/student-report?studentId=${student.id}`)}
-                  >
-                    <TableCell>{student.name}</TableCell>
-                    <TableCell>{student.grade}</TableCell>
-                    <TableCell>{absentRates[student.id]}%</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <p className="text-center text-muted-foreground">No absent students today</p>
-          )}
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
 
-      {/* Highest Absentee Table */}
+      {/* 2️⃣ Highest Absentee Table */}
+      <Card>
+        <CardHeader className="flex items-center justify-between">
+          <div>
+            <CardTitle>Highest Absentee Students</CardTitle>
+          </div>
+          <Select value={gradeFilterHighestAbsent} onValueChange={setGradeFilterHighestAbsent}>
+            <SelectTrigger className="w-32">
+              <SelectValue placeholder="Select Grade" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Grades</SelectItem>
+              {grades.map((g) => (
+                <SelectItem key={g} value={g}>{g}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardHeader>
+        <CardContent className="overflow-y-auto max-h-80">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Grade</TableHead>
+                <TableHead>Total Days</TableHead>
+                <TableHead>Absent Days</TableHead>
+                <TableHead>Absent %</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {highestAbsentStudents.map((s) => (
+                <TableRow key={s.id} className="cursor-pointer" onClick={() => setSelectedStudentForModal(s)}>
+                  <TableCell>{s.name}</TableCell>
+                  <TableCell>{s.grade}</TableCell>
+                  <TableCell>{s.total}</TableCell>
+                  <TableCell>{s.absent}</TableCell>
+                  <TableCell>{s.percentage}%</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Modal for Student Report */}
+      {selectedStudentForModal && (
+        <Dialog open={!!selectedStudentForModal} onOpenChange={() => setSelectedStudentForModal(null)}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>{selectedStudentForModal.name} - Grade {selectedStudentForModal.grade}</DialogTitle>
+            </DialogHeader>
+            <StudentReportModalContent student={selectedStudentForModal} />
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+// Modal Content Component
+function StudentReportModalContent({ student }) {
+  const { data: attendanceData = [] } = useQuery({
+    queryKey: ["attendance", student.id],
+    queryFn: async () => {
+      const { data } = await supabase.from("attendance").select("*").eq("student_id", student.id).order("date");
+      return data;
+    },
+  });
+
+  const { data: chapterProgress = [] } = useQuery({
+    queryKey: ["student-chapters", student.id],
+    queryFn: async () => {
+      const { data } = await supabase.from("student_chapters").select("*, chapters(*)").eq("student_id", student.id);
+      return data;
+    },
+  });
+
+  const { data: testResults = [] } = useQuery({
+    queryKey: ["student-test-results", student.id],
+    queryFn: async () => {
+      const { data } = await supabase.from("test_results").select("*, tests(*)").eq("student_id", student.id);
+      return data;
+    },
+  });
+
+  const totalDays = attendanceData.length;
+  const presentDays = attendanceData.filter((a) => a.status === "Present").length;
+  const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
+
+  const totalChapters = chapterProgress.length;
+  const completedChapters = chapterProgress.filter(cp => cp.completed).length;
+  const chapterCompletionPercentage = totalChapters ? Math.round((completedChapters / totalChapters) * 100) : 0;
+
+  const totalTests = testResults.length;
+  const totalMarksObtained = testResults.reduce((sum, r) => sum + r.marks_obtained, 0);
+  const totalMaxMarks = testResults.reduce((sum, r) => sum + (r.tests?.total_marks || 0), 0);
+  const averagePercentage = totalMaxMarks > 0 ? Math.round((totalMarksObtained / totalMaxMarks) * 100) : 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Attendance */}
       <Card>
         <CardHeader>
-          <CardTitle>Highest Absentee Students</CardTitle>
+          <CardTitle>Attendance Overview</CardTitle>
         </CardHeader>
-        <CardContent className="max-h-96 overflow-y-auto">
-          {highestAbsentees.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Grade</TableHead>
-                  <TableHead>Absent Rate %</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {highestAbsentees.map(student => (
-                  <TableRow
-                    key={student.id}
-                    className={`cursor-pointer ${absentRates[student.id] === Math.max(...Object.values(absentRates)) ? "bg-red-100" : ""}`}
-                    onClick={() => navigate(`/student-report?studentId=${student.id}`)}
-                  >
-                    <TableCell>{student.name}</TableCell>
-                    <TableCell>{student.grade}</TableCell>
-                    <TableCell>{absentRates[student.id]}%</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <p className="text-center text-muted-foreground">No student data available</p>
-          )}
+        <CardContent>
+          <p>Total Days: {totalDays}</p>
+          <p>Present: {presentDays}</p>
+          <p>Absent: {totalDays - presentDays}</p>
+          <p>Attendance %: {attendancePercentage}%</p>
+        </CardContent>
+      </Card>
+
+      {/* Chapters */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Chapter Progress</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>Total Chapters: {totalChapters}</p>
+          <p>Completed: {completedChapters}</p>
+          <p>Progress: {chapterCompletionPercentage}%</p>
+        </CardContent>
+      </Card>
+
+      {/* Test Results */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Test Results</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {testResults.map((r) => (
+            <div key={r.id} className="p-2 border rounded">
+              <p><strong>{r.tests?.name}</strong> ({r.tests?.subject})</p>
+              <p>{r.marks_obtained} / {r.tests?.total_marks} ({Math.round((r.marks_obtained / (r.tests?.total_marks || 1)) * 100)}%)</p>
+            </div>
+          ))}
+          {testResults.length === 0 && <p className="text-muted-foreground">No test results recorded</p>}
         </CardContent>
       </Card>
     </div>
