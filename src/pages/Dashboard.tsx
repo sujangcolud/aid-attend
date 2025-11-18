@@ -95,14 +95,17 @@ export default function Dashboard() {
     )
   );
 
-  const absentToday = students.filter((student) =>
-    allAttendance.some(
-      (att) =>
-        att.student_id === student.id &&
-        att.date === today &&
-        att.status === "Absent"
-    )
-  );
+  // ✅ Apply grade filter to absentToday table
+  const absentToday = students
+    .filter((student) => gradeFilter === "all" || student.grade === gradeFilter)
+    .filter((student) =>
+      allAttendance.some(
+        (att) =>
+          att.student_id === student.id &&
+          att.date === today &&
+          att.status === "Absent"
+      )
+    );
 
   const totalStudents = students.length;
   const presentCount = presentToday.length;
