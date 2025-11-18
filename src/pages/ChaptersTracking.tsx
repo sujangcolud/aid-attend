@@ -101,6 +101,23 @@ export default function ChaptersTracking() {
     },
   });
 
+  // Fetch present students for selected date
+  const { data: presentToday = [] } = useQuery({
+    queryKey: ["present-students", date, user?.center_id],
+    queryFn: async () => {
+      // Attendance table uses `status` (e.g., 'present') as per your DB types
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("student_id")
+        .eq("date", date)
+        .eq("status", "present");
+
+      if (error) throw error;
+      // data is array of { student_id: string }
+      return data.map((d: any) => d.student_id);
+    },
+  });
+
   // Add chapter
   const addChapterMutation = useMutation({
     mutationFn: async () => {
@@ -172,7 +189,11 @@ export default function ChaptersTracking() {
   };
 
   const selectAllStudents = () => {
-    setSelectedStudentIds(students.map(s => s.id));
+    // Only select students that match the current grade filter (or all if "all")
+    const filtered = students.filter(
+      (s) => filterGrade === "all" || s.grade === filterGrade
+    );
+    setSelectedStudentIds(filtered.map((s) => s.id));
   };
 
   const subjects = Array.from(new Set(chapters.map(c => c.subject)));
@@ -267,14 +288,24 @@ export default function ChaptersTracking() {
                 <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
                   {students
                     .filter(s => filterGrade === "all" || s.grade === filterGrade)
-                    .map((student) => (
-                      <div key={student.id} className="flex items-center space-x-2">
-                        <Checkbox id={student.id} checked={selectedStudentIds.includes(student.id)} onCheckedChange={() => toggleStudentSelection(student.id)} />
-                        <label htmlFor={student.id} className="text-sm font-medium leading-none cursor-pointer">
-                          {student.name} - Grade {student.grade}
-                        </label>
-                      </div>
-                    ))}
+                    .map((student) => {
+                      const isPresentToday = presentToday.includes(student.id);
+
+                      return (
+                        <div
+                          key={student.id}
+                          className={`flex items-center space-x-2 p-2 rounded ${isPresentToday ? "bg-green-100" : ""}`}
+                        >
+                          <Checkbox id={student.id} checked={selectedStudentIds.includes(student.id)} onCheckedChange={() => toggleStudentSelection(student.id)} />
+                          <label htmlFor={student.id} className="text-sm font-medium leading-none cursor-pointer">
+                            {student.name} - Grade {student.grade}
+                            {isPresentToday && (
+                              <span className="ml-2 text-green-600 text-xs">(Present Today)</span>
+                            )}
+                          </label>
+                        </div>
+                      );
+                    })}
                 </div>
               </div>
 
