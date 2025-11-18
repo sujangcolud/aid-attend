@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { useState, useEffect } from 'react';
 
 interface AttendanceNote {
@@ -53,7 +53,7 @@ const ParentDashboard = () => {
         .from('attendance')
         .select('*')
         .eq('student_id', user.student_id)
-        .order('date', { ascending: false });
+        .order('date', { ascending: true });
       if (error) throw error;
       return data;
     },
@@ -89,7 +89,6 @@ const ParentDashboard = () => {
     },
   });
 
-  // Attendance summary stats
   const totalDays = attendance.length;
   const presentDays = attendance.filter((a: any) => a.status === 'Present').length;
   const absentDays = totalDays - presentDays;
@@ -100,10 +99,10 @@ const ParentDashboard = () => {
     navigate('/login-parent');
   };
 
-  // Mini calendar with notes stored locally
+  // Calendar notes in localStorage
   const localStorageKey = `parentAttendanceNotes-${user.student_id}`;
   const [calendarNotes, setCalendarNotes] = useState<Record<string, AttendanceNote>>({});
-  const [showCalendar, setShowCalendar] = useState(true);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
 
   useEffect(() => {
     const stored = localStorage.getItem(localStorageKey);
@@ -116,27 +115,34 @@ const ParentDashboard = () => {
     localStorage.setItem(localStorageKey, JSON.stringify(updated));
   };
 
-  // Build a compact calendar: only days with attendance
-  const attendanceDates = attendance.map(a => a.date);
+  // Full mini calendar: all days of current month
+  const daysOfMonth = eachDayOfInterval({
+    start: startOfMonth(currentMonth),
+    end: endOfMonth(currentMonth)
+  });
+
   const attendanceMap: Record<string, 'Present' | 'Absent'> = {};
   attendance.forEach(a => {
     attendanceMap[a.date] = a.status;
   });
 
-  // Filters for chapters and tests
+  // Filters: get unique subjects from testResults and chapters
+  const testSubjects = Array.from(new Set(testResults.map(t => t.tests?.subject).filter(Boolean)));
+  const chapterSubjects = Array.from(new Set(chapters.map(c => c.chapters?.subject).filter(Boolean)));
+
   const [chapterSubjectFilter, setChapterSubjectFilter] = useState('');
   const [chapterMonthFilter, setChapterMonthFilter] = useState('');
   const [testSubjectFilter, setTestSubjectFilter] = useState('');
   const [testMonthFilter, setTestMonthFilter] = useState('');
 
   const filteredChapters = chapters.filter(c => {
-    const subjectMatch = !chapterSubjectFilter || c.chapters?.subject?.includes(chapterSubjectFilter);
+    const subjectMatch = !chapterSubjectFilter || c.chapters?.subject === chapterSubjectFilter;
     const monthMatch = !chapterMonthFilter || (c.date_completed && format(parseISO(c.date_completed), 'yyyy-MM') === chapterMonthFilter);
     return subjectMatch && monthMatch;
   });
 
   const filteredTests = testResults.filter(t => {
-    const subjectMatch = !testSubjectFilter || t.tests?.subject?.includes(testSubjectFilter);
+    const subjectMatch = !testSubjectFilter || t.tests?.subject === testSubjectFilter;
     const monthMatch = !testMonthFilter || (t.date_taken && format(parseISO(t.date_taken), 'yyyy-MM') === testMonthFilter);
     return subjectMatch && monthMatch;
   });
@@ -208,11 +214,11 @@ const ParentDashboard = () => {
                 <p className="text-sm text-muted-foreground">Total Days</p>
               </div>
               <div className="text-center p-4 bg-green-50 rounded-lg">
-                <p className="text-2xl font-bold text-green-600">{presentDays}</p>
+                <p className="text-2xl font-bold text-green-700">{presentDays}</p>
                 <p className="text-sm text-muted-foreground">Present</p>
               </div>
               <div className="text-center p-4 bg-red-50 rounded-lg">
-                <p className="text-2xl font-bold text-red-600">{absentDays}</p>
+                <p className="text-2xl font-bold text-red-700">{absentDays}</p>
                 <p className="text-sm text-muted-foreground">Absent</p>
               </div>
               <div className="text-center p-4 bg-purple-50 rounded-lg">
@@ -220,74 +226,72 @@ const ParentDashboard = () => {
                 <p className="text-sm text-muted-foreground">Attendance</p>
               </div>
             </div>
-            <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-green-600 transition-all duration-300"
-                style={{ width: `${attendancePercentage}%` }}
-              />
-            </div>
           </CardContent>
         </Card>
 
-        {/* MINI CALENDAR */}
+        {/* MINI FULL CALENDAR */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" /> Attendance Calendar
-              </span>
-              <Button size="sm" onClick={() => setShowCalendar(prev => !prev)}>
-                {showCalendar ? 'Hide Calendar' : 'Show Calendar'}
-              </Button>
+          <CardHeader className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" /> Attendance Calendar
             </CardTitle>
+            <div className="flex gap-2 items-center">
+              <Button size="sm" onClick={() => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}>
+                Prev
+              </Button>
+              <Button size="sm" onClick={() => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}>
+                Next
+              </Button>
+            </div>
           </CardHeader>
-          {showCalendar && (
-            <CardContent className="grid grid-cols-7 gap-1 text-xs">
-              {attendanceDates.map(date => {
-                const status = attendanceMap[date];
-                return (
-                  <div
-                    key={date}
-                    className={`p-1 rounded text-center cursor-pointer ${
-                      status === 'Present'
-                        ? 'bg-green-300'
-                        : status === 'Absent'
-                        ? 'bg-red-300'
-                        : 'bg-gray-200'
-                    }`}
-                    title={calendarNotes[date]?.note || ''}
-                    onClick={() => {
-                      const note = prompt('Add note:', calendarNotes[date]?.note || '') || '';
-                      saveNote(date, note);
-                    }}
-                  >
-                    {format(parseISO(date), 'd')}
-                  </div>
-                );
-              })}
-            </CardContent>
-          )}
+          <CardContent className="grid grid-cols-7 gap-1 text-xs">
+            {daysOfMonth.map(date => {
+              const dateStr = format(date, 'yyyy-MM-dd');
+              const status = attendanceMap[dateStr];
+              return (
+                <div
+                  key={dateStr}
+                  className={`p-1 rounded text-center cursor-pointer text-white ${
+                    status === 'Present'
+                      ? 'bg-green-700'
+                      : status === 'Absent'
+                      ? 'bg-red-700'
+                      : 'bg-gray-300 text-black'
+                  }`}
+                  title={calendarNotes[dateStr]?.note || ''}
+                  onClick={() => {
+                    const note = prompt('Add note:', calendarNotes[dateStr]?.note || '') || '';
+                    saveNote(dateStr, note);
+                  }}
+                >
+                  {format(date, 'd')}
+                </div>
+              );
+            })}
+          </CardContent>
         </Card>
 
         {/* TEST RESULTS */}
         <Card>
           <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
             <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Test Results
+              <FileText className="h-5 w-5" /> Test Results
             </CardTitle>
             <div className="flex gap-2 items-center">
+              <select
+                value={testSubjectFilter}
+                onChange={(e) => setTestSubjectFilter(e.target.value)}
+                className="border p-1 rounded text-sm"
+              >
+                <option value="">All Subjects</option>
+                {testSubjects.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
               <input
                 type="month"
                 value={testMonthFilter}
                 onChange={(e) => setTestMonthFilter(e.target.value)}
-                className="border p-1 rounded text-sm"
-              />
-              <input
-                type="text"
-                placeholder="Subject"
-                value={testSubjectFilter}
-                onChange={(e) => setTestSubjectFilter(e.target.value)}
                 className="border p-1 rounded text-sm"
               />
             </div>
@@ -345,21 +349,23 @@ const ParentDashboard = () => {
         <Card>
           <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
             <CardTitle className="flex items-center gap-2">
-              <BookOpen className="h-5 w-5" />
-              Chapters Studied
+              <BookOpen className="h-5 w-5" /> Chapters Studied
             </CardTitle>
             <div className="flex gap-2 items-center">
+              <select
+                value={chapterSubjectFilter}
+                onChange={(e) => setChapterSubjectFilter(e.target.value)}
+                className="border p-1 rounded text-sm"
+              >
+                <option value="">All Subjects</option>
+                {chapterSubjects.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
               <input
                 type="month"
                 value={chapterMonthFilter}
                 onChange={(e) => setChapterMonthFilter(e.target.value)}
-                className="border p-1 rounded text-sm"
-              />
-              <input
-                type="text"
-                placeholder="Subject"
-                value={chapterSubjectFilter}
-                onChange={(e) => setChapterSubjectFilter(e.target.value)}
                 className="border p-1 rounded text-sm"
               />
             </div>
