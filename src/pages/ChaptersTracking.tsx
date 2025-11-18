@@ -81,8 +81,7 @@ export default function ChaptersTracking() {
   const { data: uniqueChapters = [] } = useQuery({
     queryKey: ["unique-chapters", user?.center_id],
     queryFn: async () => {
-      let query = supabase.from("chapters").select("id, subject, chapter_name");
-      const { data, error } = await query;
+      const { data, error } = await supabase.from("chapters").select("id, subject, chapter_name");
       if (error) throw error;
       const seen = new Set<string>();
       const unique = [];
@@ -111,13 +110,10 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Auto-select present students on date change without removing manual selections
+  // Auto-select present students on date change
   useEffect(() => {
     if (!presentToday) return;
-    setSelectedStudentIds(prev => {
-      const combined = new Set([...prev, ...presentToday]);
-      return Array.from(combined);
-    });
+    setSelectedStudentIds(prev => Array.from(new Set([...prev, ...presentToday])));
   }, [presentToday]);
 
   // Add chapter mutation
@@ -214,10 +210,9 @@ export default function ChaptersTracking() {
 
   return (
     <div className="space-y-6">
-      {/* Dialog for recording chapter */}
-      {/* Keep all your previous dialog code intact */}
+      {/* Dialog + record chapter functionality remains intact */}
 
-      {/* STUDENT SELECTION */}
+      {/* Student selection UI */}
       <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
         {students
           .filter(s => filterGrade === "all" || s.grade === filterGrade)
@@ -239,7 +234,7 @@ export default function ChaptersTracking() {
           })}
       </div>
 
-      {/* CHAPTERS TABLE */}
+      {/* Chapters table */}
       <Card>
         <CardHeader>
           <CardTitle>Chapters Taught</CardTitle>
