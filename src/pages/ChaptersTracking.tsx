@@ -242,6 +242,8 @@ export default function ChaptersTracking() {
                 <Label>Notes (Optional)</Label>
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional notes..." rows={2} />
               </div>
+
+              {/* STUDENTS + GRADE FILTER */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <Label className="flex items-center gap-2">
@@ -249,17 +251,33 @@ export default function ChaptersTracking() {
                   </Label>
                   <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}> Select All </Button>
                 </div>
+
+                {/* Grade Filter */}
+                <div className="mt-2">
+                  <Label>Filter by Grade</Label>
+                  <Select value={filterGrade} onValueChange={setFilterGrade}>
+                    <SelectTrigger><SelectValue placeholder="All Grades" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Grades</SelectItem>
+                      {grades.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
-                  {students.map((student) => (
-                    <div key={student.id} className="flex items-center space-x-2">
-                      <Checkbox id={student.id} checked={selectedStudentIds.includes(student.id)} onCheckedChange={() => toggleStudentSelection(student.id)} />
-                      <label htmlFor={student.id} className="text-sm font-medium leading-none cursor-pointer">
-                        {student.name} - Grade {student.grade}
-                      </label>
-                    </div>
-                  ))}
+                  {students
+                    .filter(s => filterGrade === "all" || s.grade === filterGrade)
+                    .map((student) => (
+                      <div key={student.id} className="flex items-center space-x-2">
+                        <Checkbox id={student.id} checked={selectedStudentIds.includes(student.id)} onCheckedChange={() => toggleStudentSelection(student.id)} />
+                        <label htmlFor={student.id} className="text-sm font-medium leading-none cursor-pointer">
+                          {student.name} - Grade {student.grade}
+                        </label>
+                      </div>
+                    ))}
                 </div>
               </div>
+
               <Button onClick={() => addChapterMutation.mutate()} disabled={selectedStudentIds.length === 0 || (!selectedChapterId && (!subject || !chapterName)) || addChapterMutation.isPending} className="w-full">
                 Record Chapter for {selectedStudentIds.length} Student(s)
               </Button>
