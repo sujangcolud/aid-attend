@@ -25,9 +25,23 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Download, Users, CheckCircle2, XCircle, TrendingUp } from "lucide-react";
+import {
+  Users,
+  CheckCircle2,
+  XCircle,
+  TrendingUp,
+  CalendarIcon,
+  BookOpen,
+  FileText,
+} from "lucide-react";
 import { format } from "date-fns";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 export default function Dashboard() {
   const { user, loading } = useAuth();
@@ -55,6 +69,9 @@ export default function Dashboard() {
   const filteredStudents = students.filter(
     (s) => gradeFilter === "all" || s.grade === gradeFilter
   );
+
+  // Grades for filter
+  const grades = [...new Set(students.map((s) => s.grade))];
 
   // Fetch attendance
   const { data: allAttendance = [] } = useQuery({
@@ -116,8 +133,81 @@ export default function Dashboard() {
     .sort((a, b) => b.percentage - a.percentage)
     .filter((s) => gradeFilter === "all" || s.grade === gradeFilter);
 
-  // Grades for filter
-  const grades = [...new Set(students.map((s) => s.grade))];
+  // Fetch student-specific data when selected
+  const studentId = selectedStudent?.id;
+
+  const { data: attendanceData = [] } = useQuery({
+    queryKey: ["student-attendance", studentId],
+    queryFn: async () => {
+      if (!studentId) return [];
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("*")
+        .eq("student_id", studentId)
+        .order("date");
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!studentId,
+  });
+
+  const { data: chapterProgress = [] } = useQuery({
+    queryKey: ["student-chapters", studentId],
+    queryFn: async () => {
+      if (!studentId) return [];
+      const { data, error } = await supabase
+        .from("student_chapters")
+        .select("*, chapters(*)")
+        .eq("student_id", studentId)
+        .order("date_completed", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!studentId,
+  });
+
+  const { data: testResults = [] } = useQuery({
+    queryKey: ["student-test-results", studentId],
+    queryFn: async () => {
+      if (!studentId) return [];
+      const { data, error } = await supabase
+        .from("test_results")
+        .select("*, tests(*)")
+        .eq("student_id", studentId)
+        .order("date_taken", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!studentId,
+  });
+
+  const totalDays = attendanceData.length;
+  const presentDays = attendanceData.filter((a) => a.status === "Present")
+    .length;
+  const attendancePercentage =
+    totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
+
+  const totalChaptersCount = chapterProgress.length;
+  const completedChaptersCount = chapterProgress.filter((c) => c.completed)
+    .length;
+  const chapterCompletionPercentage =
+    totalChaptersCount > 0
+      ? Math.round((completedChaptersCount / totalChaptersCount) * 100)
+      : 0;
+
+  const totalTests = testResults.length;
+  const totalMarksObtained = testResults.reduce(
+    (sum, r) => sum + r.marks_obtained,
+    0
+  );
+  const totalMaxMarks = testResults.reduce(
+    (sum, r) => sum + (r.tests?.total_marks || 0),
+    0
+  );
+  const averagePercentage =
+    totalMaxMarks > 0
+      ? Math.round((totalMarksObtained / totalMaxMarks) * 100)
+      : 0;
 
   return (
     <div className="space-y-6">
@@ -195,7 +285,7 @@ export default function Dashboard() {
         </Select>
       </div>
 
-      {/* Tables */}
+      {/* Tables side by side */}
       <div className="flex gap-6 overflow-x-auto">
         {/* Absent Today Table */}
         <Card className="flex-1">
@@ -267,31 +357,150 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Student Modal */}
+      {/* Student Report Modal */}
       {selectedStudent && (
-        <Dialog open={!!selectedStudent} onOpenChange={() => setSelectedStudent(null)}>
-          <DialogContent className="max-w-xl">
+        <Dialog
+          open={!!selectedStudent}
+          onOpenChange={() => setSelectedStudent(null)}
+        >
+          <DialogContent className="max-w-4xl">
             <DialogHeader>
-              <DialogTitle>{selectedStudent.name} - Grade {selectedStudent.grade}</DialogTitle>
+              <DialogTitle>
+                {selectedStudent.name} - Grade {selectedStudent.grade}
+              </DialogTitle>
             </DialogHeader>
-            <div className="grid grid-cols-2 gap-4">
-              <Card className="p-2">
-                <CardTitle className="text-sm">Total Days</CardTitle>
-                <CardContent>{studentAttendanceSummary.find(s => s.id === selectedStudent.id)?.total || 0}</CardContent>
-              </Card>
-              <Card className="p-2">
-                <CardTitle className="text-sm">Present</CardTitle>
-                <CardContent>{studentAttendanceSummary.find(s => s.id === selectedStudent.id)?.present || 0}</CardContent>
-              </Card>
-              <Card className="p-2">
-                <CardTitle className="text-sm">Absent</CardTitle>
-                <CardContent>{studentAttendanceSummary.find(s => s.id === selectedStudent.id)?.absent || 0}</CardContent>
-              </Card>
-              <Card className="p-2">
-                <CardTitle className="text-sm">Absent %</CardTitle>
-                <CardContent>{studentAttendanceSummary.find(s => s.id === selectedStudent.id)?.percentage || 0}%</CardContent>
-              </Card>
-            </div>
+
+            {/* Attendance Overview */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CalendarIcon className="h-5 w-5" />
+                  Attendance Overview
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-4 gap-4 mb-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Days</p>
+                    <p className="text-2xl font-bold">{totalDays}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Present</p>
+                    <p className="text-2xl font-bold text-green-600">{presentDays}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Absent</p>
+                    <p className="text-2xl font-bold text-red-600">{totalDays - presentDays}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Attendance %</p>
+                    <p className="text-2xl font-bold">{attendancePercentage}%</p>
+                  </div>
+                </div>
+
+                {/* Attendance Table */}
+                <div className="max-h-48 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {attendanceData.map((record) => (
+                        <TableRow key={record.id}>
+                          <TableCell>{format(new Date(record.date), "PPP")}</TableCell>
+                          <TableCell>
+                            <Badge variant={record.status === "Present" ? "success" : "destructive"}>
+                              {record.status}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Chapter Progress */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BookOpen className="h-5 w-5" />
+                  Chapter Progress
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Chapters</p>
+                    <p className="text-2xl font-bold">{totalChaptersCount}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Completed</p>
+                    <p className="text-2xl font-bold text-green-600">{completedChaptersCount}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Progress %</p>
+                    <p className="text-2xl font-bold">{chapterCompletionPercentage}%</p>
+                  </div>
+                </div>
+                <div className="max-h-48 overflow-y-auto space-y-2">
+                  {chapterProgress.map((cp) => (
+                    <Card key={cp.id} className="p-2">
+                      <CardContent>
+                        <p className="font-medium">{cp.chapters?.chapter_name}</p>
+                        <p className="text-sm text-muted-foreground">{cp.chapters?.subject}</p>
+                        <Badge variant={cp.completed ? "success" : "secondary"}>
+                          {cp.completed ? "Completed" : "In Progress"}
+                        </Badge>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Test Results */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Test Results
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Tests</p>
+                    <p className="text-2xl font-bold">{totalTests}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Average %</p>
+                    <p className="text-2xl font-bold">{averagePercentage}%</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Marks</p>
+                    <p className="text-2xl font-bold">
+                      {totalMarksObtained}/{totalMaxMarks}
+                    </p>
+                  </div>
+                </div>
+                <div className="max-h-48 overflow-y-auto space-y-2">
+                  {testResults.map((result) => (
+                    <Card key={result.id} className="p-2">
+                      <CardContent>
+                        <p className="font-medium">{result.tests?.name}</p>
+                        <p className="text-sm text-muted-foreground">{result.tests?.subject}</p>
+                        <p>{result.marks_obtained}/{result.tests?.total_marks}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           </DialogContent>
         </Dialog>
       )}
