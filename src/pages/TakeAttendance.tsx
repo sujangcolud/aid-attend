@@ -104,7 +104,16 @@ export default function TakeAttendance() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!students) return;
-      await supabase.from("attendance").delete().eq("date", dateStr);
+
+      // Get student IDs for the current center
+      const studentIds = students.map(s => s.id);
+
+      // Delete attendance only for students in the current center for the selected date
+      await supabase
+        .from("attendance")
+        .delete()
+        .eq("date", dateStr)
+        .in("student_id", studentIds);
 
       const records = students.map((student) => ({
         student_id: student.id,
