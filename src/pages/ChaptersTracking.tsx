@@ -192,7 +192,6 @@ export default function ChaptersTracking() {
     );
   };
 
-  // Select students based on current grade filter only
   const selectAllStudents = () => {
     const filtered = students.filter(s => filterGrade === "all" || s.grade === filterGrade);
     setSelectedStudentIds(filtered.map(s => s.id));
@@ -201,12 +200,24 @@ export default function ChaptersTracking() {
   const subjects = Array.from(new Set(chapters.map(c => c.subject)));
   const grades = Array.from(new Set(students.map(s => s.grade)));
 
+  // Fetch all attendance for chapters table
+  const { data: attendanceRecords = [] } = useQuery({
+    queryKey: ["attendance-all", user?.center_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("student_id, date, status");
+      if (error) throw error;
+      return data;
+    },
+  });
+
   return (
     <div className="space-y-6">
-      {/* Dialog and inputs */}
-      {/* Keep all your previous dialog and chapter creation code exactly the same */}
+      {/* Dialog for recording chapter */}
+      {/* Keep all your previous dialog code intact */}
 
-      {/* Student selection */}
+      {/* STUDENT SELECTION */}
       <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
         {students
           .filter(s => filterGrade === "all" || s.grade === filterGrade)
@@ -228,8 +239,61 @@ export default function ChaptersTracking() {
           })}
       </div>
 
-      {/* Chapters table */}
-      {/* Keep all your previous chapters table code as-is */}
+      {/* CHAPTERS TABLE */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Chapters Taught</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {chapters.map((chapter: any) => (
+              <div key={chapter.id} className="border rounded-lg p-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className="font-semibold text-lg">{chapter.chapter_name}</h3>
+                      <span className="text-sm text-muted-foreground">{chapter.subject}</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Date Taught: {format(new Date(chapter.date_taught), "PPP")}
+                    </p>
+                    {chapter.notes && <p className="text-sm mb-2">{chapter.notes}</p>}
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {chapter.student_chapters?.map((sc: any) => {
+                        const wasPresent = attendanceRecords.some(
+                          (att: any) =>
+                            att.student_id === sc.student_id &&
+                            att.date === chapter.date_taught &&
+                            att.status === "Present"
+                        );
+                        return (
+                          <span
+                            key={sc.id}
+                            className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              wasPresent ? "bg-green-100 text-green-800" : "bg-primary/10 text-primary"
+                            }`}
+                          >
+                            {sc.students?.name} - Grade {sc.students?.grade}
+                            {wasPresent && <span className="ml-1 text-green-600 text-xs">(Present)</span>}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => deleteChapterMutation.mutate(chapter.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+            {chapters.length === 0 && (
+              <p className="text-muted-foreground text-center py-8">
+                No chapters recorded yet
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
