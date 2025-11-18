@@ -48,40 +48,42 @@ export default function ChaptersTracking() {
   const grades = Array.from(new Set(students.map((s: any) => s.grade))).filter(Boolean);
 
   // ----------------------------
-  // Fetch attendance for center
+  // Fetch attendance for selected date
   // ----------------------------
   const { data: attendance = [] } = useQuery({
-    queryKey: ["attendance", user?.center_id],
+    queryKey: ["attendance", user?.center_id, date],
     queryFn: async () => {
-      if (!user?.center_id) return [];
+      if (!user?.center_id || !date) return [];
       const { data, error } = await supabase
         .from("attendance")
         .select("*")
-        .eq("center_id", user.center_id);
+        .eq("center_id", user.center_id)
+        .eq("date", date);
       if (error) throw error;
       return data || [];
     },
+    enabled: !!user?.center_id && !!date,
   });
 
   // ----------------------------
   // Auto-select students present on selected date
   // ----------------------------
   useEffect(() => {
-    if (!date || !students.length) return;
+    if (!students.length) return;
 
-    const presentStudents = students
+    const presentStudentIds = new Set(
+      attendance.filter((a: any) => a.status === "Present").map((a: any) => a.student_id)
+    );
+
+    const filteredStudents = students
       .filter((s: any) => {
         if (popupGradeFilter !== "all" && s.grade !== popupGradeFilter) return false;
-
-        const att = attendance.find(
-          (a: any) => a.student_id === s.id && format(new Date(a.date), "yyyy-MM-dd") === date
-        );
-        return showPresentOnly ? att?.status === "Present" : true;
+        return showPresentOnly ? presentStudentIds.has(s.id) : true;
       })
       .map((s: any) => s.id);
 
-    setSelectedStudentIds(presentStudents);
-  }, [date, attendance, students, popupGradeFilter, showPresentOnly]);
+    setSelectedStudentIds(filteredStudents);
+  }, [attendance, students, popupGradeFilter, showPresentOnly]);
 
   // ----------------------------
   // Fetch chapters for center
