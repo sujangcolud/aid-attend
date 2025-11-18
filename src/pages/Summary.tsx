@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 
 interface StudentSummary {
   id: string;
@@ -24,6 +24,7 @@ interface StudentSummary {
 export default function Summary() {
   const { user } = useAuth();
   const [gradeFilter, setGradeFilter] = useState<string>("all");
+  const [monthFilter, setMonthFilter] = useState<string>("all"); // "YYYY-MM" format or "all"
 
   const { data: students } = useQuery({
     queryKey: ["students", user?.center_id],
@@ -32,12 +33,11 @@ export default function Summary() {
         .from("students")
         .select("*")
         .order("name");
-      
-      // Filter by center_id if user is not admin
+
       if (user?.role !== 'admin' && user?.center_id) {
         query = query.eq('center_id', user.center_id);
       }
-      
+
       const { data, error } = await query;
       if (error) throw error;
       return data;
@@ -47,7 +47,6 @@ export default function Summary() {
   const { data: allAttendance } = useQuery({
     queryKey: ["all-attendance", user?.center_id],
     queryFn: async () => {
-      // Get student IDs for this center first
       const studentIds = students?.map(s => s.id) || [];
       if (studentIds.length === 0) return [];
 
@@ -63,10 +62,22 @@ export default function Summary() {
 
   const grades = [...new Set(students?.map((s) => s.grade) || [])];
 
+  // Filter and calculate summary data
   const summaryData: StudentSummary[] =
     students
       ?.map((student) => {
-        const studentAttendance = allAttendance?.filter((a) => a.student_id === student.id) || [];
+        let studentAttendance = allAttendance?.filter((a) => a.student_id === student.id) || [];
+
+        // Apply month filter
+        if (monthFilter !== "all") {
+          const [year, month] = monthFilter.split("-");
+          const start = startOfMonth(new Date(parseInt(year), parseInt(month) - 1));
+          const end = endOfMonth(new Date(parseInt(year), parseInt(month) - 1));
+          studentAttendance = studentAttendance.filter((a) =>
+            isWithinInterval(parseISO(a.date), { start, end })
+          );
+        }
+
         const present = studentAttendance.filter((a) => a.status === "Present").length;
         const absent = studentAttendance.filter((a) => a.status === "Absent").length;
         const total = present + absent;
@@ -123,10 +134,10 @@ export default function Summary() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
             <div>
-              <CardTitle>Filter by Grade</CardTitle>
-              <CardDescription>Select a grade to filter students</CardDescription>
+              <CardTitle>Filters</CardTitle>
+              <CardDescription>Select grade and month to filter students</CardDescription>
             </div>
             <Button variant="outline" size="sm" onClick={exportToCSV}>
               <Download className="mr-2 h-4 w-4" />
@@ -134,7 +145,7 @@ export default function Summary() {
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col md:flex-row gap-4">
           <Select value={gradeFilter} onValueChange={setGradeFilter}>
             <SelectTrigger className="w-full md:w-[200px]">
               <SelectValue placeholder="Select grade" />
@@ -148,6 +159,16 @@ export default function Summary() {
               ))}
             </SelectContent>
           </Select>
+
+          <div className="flex-1 md:w-[200px]">
+            <label className="block text-sm font-medium mb-1">Month</label>
+            <input
+              type="month"
+              value={monthFilter === "all" ? "" : monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value || "all")}
+              className="w-full px-3 py-2 border rounded-md"
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -182,7 +203,11 @@ export default function Summary() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge variant="destructive">{student.absent}</Badge>
+                        <div className="overflow-x-auto max-w-[200px]">
+                          <Badge variant="destructive">
+                            {student.absent}
+                          </Badge>
+                        </div>
                       </TableCell>
                       <TableCell className="text-center">{student.total}</TableCell>
                       <TableCell className="text-center">
@@ -196,9 +221,11 @@ export default function Summary() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm">
-                        {student.absentDates.length > 0
-                          ? student.absentDates.map((date) => format(new Date(date), "MMM d")).join(", ")
-                          : "None"}
+                        <div className="overflow-x-auto max-w-[250px] whitespace-nowrap">
+                          {student.absentDates.length > 0
+                            ? student.absentDates.map((date) => format(new Date(date), "MMM d")).join(", ")
+                            : "None"}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
