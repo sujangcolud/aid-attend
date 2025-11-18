@@ -87,7 +87,14 @@ export default function Dashboard() {
     absentRates[s.id] = total > 0 ? Math.round((absentCount / total) * 100) : 0;
   });
 
-  const highestAbsentRate = Math.max(...Object.values(absentRates), 0);
+  const overallAbsentRate = studentsCount
+    ? Math.round((absentStudents.length / studentsCount) * 100)
+    : 0;
+
+  // Students sorted by highest absent rate
+  const highestAbsentees = [...filteredStudents].sort(
+    (a, b) => (absentRates[b.id] || 0) - (absentRates[a.id] || 0)
+  );
 
   if (loading) return <p>Loading dashboard...</p>;
 
@@ -95,6 +102,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Dashboard Title */}
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
         <p className="text-muted-foreground">
@@ -142,13 +150,13 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Highest Absent Rate</CardTitle>
+            <CardTitle className="text-sm font-medium">Absent Rate</CardTitle>
             <div className="rounded-lg p-2 bg-accent/10">
               <TrendingUp className="h-4 w-4 text-accent" />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{highestAbsentRate}%</div>
+            <div className="text-2xl font-bold">{overallAbsentRate}%</div>
           </CardContent>
         </Card>
       </div>
@@ -170,7 +178,7 @@ export default function Dashboard() {
         </Select>
       </div>
 
-      {/* Absent Students Table */}
+      {/* Absent Students Today Table */}
       <Card>
         <CardHeader>
           <CardTitle>Absent Students Today</CardTitle>
@@ -189,8 +197,7 @@ export default function Dashboard() {
                 {absentStudents.map(student => (
                   <TableRow
                     key={student.id}
-                    className={`cursor-pointer ${absentRates[student.id] === highestAbsentRate ? "bg-red-100" : ""
-                      }`}
+                    className="cursor-pointer"
                     onClick={() => navigate(`/student-report?studentId=${student.id}`)}
                   >
                     <TableCell>{student.name}</TableCell>
@@ -206,13 +213,13 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Present Students Table */}
+      {/* Highest Absentee Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Present Students Today</CardTitle>
+          <CardTitle>Highest Absentee Students</CardTitle>
         </CardHeader>
         <CardContent className="max-h-96 overflow-y-auto">
-          {presentStudents.length > 0 ? (
+          {highestAbsentees.length > 0 ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -222,11 +229,10 @@ export default function Dashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {presentStudents.map(student => (
+                {highestAbsentees.map(student => (
                   <TableRow
                     key={student.id}
-                    className={`cursor-pointer ${absentRates[student.id] === highestAbsentRate ? "bg-red-100" : ""
-                      }`}
+                    className={`cursor-pointer ${absentRates[student.id] === Math.max(...Object.values(absentRates)) ? "bg-red-100" : ""}`}
                     onClick={() => navigate(`/student-report?studentId=${student.id}`)}
                   >
                     <TableCell>{student.name}</TableCell>
@@ -237,7 +243,7 @@ export default function Dashboard() {
               </TableBody>
             </Table>
           ) : (
-            <p className="text-center text-muted-foreground">No students present today</p>
+            <p className="text-center text-muted-foreground">No student data available</p>
           )}
         </CardContent>
       </Card>
