@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval } from "date-fns";
 import { CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +27,11 @@ interface AttendanceRecord {
   timeOut: string;
 }
 
+interface MiniDayNote {
+  holiday: boolean;
+  note: string;
+}
+
 export default function TakeAttendance() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -34,8 +39,9 @@ export default function TakeAttendance() {
   const [attendance, setAttendance] = useState<Record<string, AttendanceRecord>>({});
   const [holidayFor, setHolidayFor] = useState<"" | "all" | string>("");
   const [gradeFilter, setGradeFilter] = useState<string>("all");
-
   const [holidayMap, setHolidayMap] = useState<Record<string, "" | "all" | string>>({});
+  const [attendanceDates, setAttendanceDates] = useState<string[]>([]);
+  const [miniCalendar, setMiniCalendar] = useState<Record<string, MiniDayNote>>({});
 
   const dateStr = format(selectedDate, "yyyy-MM-dd");
 
@@ -51,57 +57,53 @@ export default function TakeAttendance() {
     },
   });
 
-  // Fetch all dates with attendance for this center
-  const { data: attendanceDates } = useQuery({
-    queryKey: ["attendance-dates", user?.center_id],
-    queryFn: async () => {
-      const studentIds = students?.map(s => s.id) || [];
-      if (studentIds.length === 0) return [];
-      const { data, error } = await supabase
-        .from("attendance")
-        .select("date")
-        .in("student_id", studentIds)
-        .order("date", { ascending: false });
-      if (error) throw error;
-      const uniqueDates = Array.from(new Set(data?.map((d: any) => d.date)));
-      return uniqueDates;
-    },
-    enabled: !!students?.length,
-  });
-
-  // Fetch attendance for selected date
+  // Fetch existing attendance for selected date
   const { data: existingAttendance } = useQuery({
     queryKey: ["attendance", dateStr],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("attendance")
-        .select("student_id, status, time_in, time_out")
-        .eq("date", dateStr);
+      const { data, error } = await supabase.from("attendance").select("student_id, status, time_in, time_out, date").eq("date", dateStr);
       if (error) throw error;
       return data;
     },
     enabled: !!dateStr,
   });
 
-  // Initialize attendance state when students or date changes
+  // Fetch all dates with attendance (for past attendance dropdown)
   useEffect(() => {
-    if (!students) return;
-    const newAttendance: Record<string, AttendanceRecord> = {};
-    students.forEach((student) => {
-      const record = existingAttendance?.find(a => a.student_id === student.id);
-      newAttendance[student.id] = {
-        present: record?.status === "Present",
-        timeIn: record?.time_in || "",
-        timeOut: record?.time_out || "",
-        studentId: student.id,
-      };
-    });
-    setAttendance(newAttendance);
+    async function fetchAttendanceDates() {
+      if (!students) return;
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("date")
+        .in("student_id", students.map(s => s.id))
+        .order("date", { ascending: false });
+      if (!error && data) {
+        const uniqueDates = Array.from(new Set(data.map((d: any) => d.date)));
+        setAttendanceDates(uniqueDates);
+      }
+    }
+    fetchAttendanceDates();
+  }, [students]);
 
-    setHolidayFor(holidayMap[dateStr] || "");
+  // Initialize attendance state
+  useEffect(() => {
+    if (students) {
+      const newAttendance: Record<string, AttendanceRecord> = {};
+      students.forEach((student) => {
+        const record = existingAttendance?.find(a => a.student_id === student.id);
+        newAttendance[student.id] = {
+          present: record?.status === "Present",
+          timeIn: record?.time_in || "",
+          timeOut: record?.time_out || "",
+          studentId: student.id,
+        };
+      });
+      setAttendance(newAttendance);
+      setHolidayFor(holidayMap[dateStr] || "");
+    }
   }, [students, existingAttendance, dateStr, holidayMap]);
 
-  // Apply holiday
+  // Apply holiday automatically whenever holidayFor changes
   useEffect(() => {
     if (!students || !holidayFor) return;
     const newAttendance = { ...attendance };
@@ -124,7 +126,6 @@ export default function TakeAttendance() {
     mutationFn: async () => {
       if (!students) return;
       await supabase.from("attendance").delete().eq("date", dateStr);
-
       const records = students.map((student) => ({
         student_id: student.id,
         date: dateStr,
@@ -132,13 +133,11 @@ export default function TakeAttendance() {
         time_in: attendance[student.id]?.timeIn || null,
         time_out: attendance[student.id]?.timeOut || null,
       }));
-
       const { error } = await supabase.from("attendance").insert(records);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["attendance", dateStr] });
-      queryClient.invalidateQueries({ queryKey: ["attendance-dates", user?.center_id] });
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
       toast.success("Attendance saved successfully!");
     },
     onError: () => toast.error("Failed to save attendance"),
@@ -189,6 +188,23 @@ export default function TakeAttendance() {
       ? students
       : students?.filter((s) => s.grade === gradeFilter);
 
+  // Mini Calendar for the month
+  const daysInMonth = eachDayOfInterval({ start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) });
+
+  const toggleMiniHoliday = (date: string) => {
+    setMiniCalendar(prev => ({
+      ...prev,
+      [date]: { holiday: !prev[date]?.holiday, note: prev[date]?.note || "" }
+    }));
+  };
+
+  const updateMiniNote = (date: string, note: string) => {
+    setMiniCalendar(prev => ({
+      ...prev,
+      [date]: { holiday: prev[date]?.holiday || false, note }
+    }));
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -196,15 +212,17 @@ export default function TakeAttendance() {
         <p className="text-muted-foreground">Mark students as present or absent</p>
       </div>
 
-      {/* Past Dates Dropdown */}
-      {attendanceDates && attendanceDates.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Select Past Attendance</CardTitle>
-          </CardHeader>
-          <CardContent>
+      {/* Filters Row */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Attendance Filters</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-4 items-end">
+          {/* Past Attendance */}
+          <div className="flex-1 min-w-[150px]">
+            <Label className="text-xs">Select Past Attendance</Label>
             <select
-              className="border p-2 rounded"
+              className="border p-2 rounded w-full"
               value={dateStr}
               onChange={(e) => setSelectedDate(new Date(e.target.value))}
             >
@@ -214,85 +232,109 @@ export default function TakeAttendance() {
                 </option>
               ))}
             </select>
-          </CardContent>
-        </Card>
-      )}
+          </div>
 
-      {/* Grade Filter */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Filter by Grade</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <select
-            className="border p-2 rounded"
-            value={gradeFilter}
-            onChange={(e) => setGradeFilter(e.target.value)}
-          >
-            <option value="all">All Grades</option>
-            {students && Array.from(new Set(students.map(s => s.grade))).map(g => (
-              <option key={g} value={g}>{g}</option>
-            ))}
-          </select>
-        </CardContent>
-      </Card>
+          {/* Grade Filter */}
+          <div className="flex-1 min-w-[120px]">
+            <Label className="text-xs">Filter by Grade</Label>
+            <select
+              className="border p-2 rounded w-full"
+              value={gradeFilter}
+              onChange={(e) => setGradeFilter(e.target.value)}
+            >
+              <option value="all">All Grades</option>
+              {students && Array.from(new Set(students.map(s => s.grade))).map(g => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </div>
 
-      {/* Holiday Selector */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Mark Holiday</CardTitle>
-          <CardDescription>Select a grade or all students</CardDescription>
-        </CardHeader>
-        <CardContent className="flex gap-4 items-center">
-          <select
-            className="border p-2 rounded"
-            value={holidayFor}
-            onChange={(e) => setHolidayFor(e.target.value as "" | "all" | string)}
-          >
-            <option value="">None</option>
-            <option value="all">All Grades</option>
-            {students && Array.from(new Set(students.map(s => s.grade))).map(g => (
-              <option key={g} value={g}>{g}</option>
-            ))}
-          </select>
+          {/* Holiday Selector */}
+          <div className="flex-1 min-w-[120px]">
+            <Label className="text-xs">Mark Holiday</Label>
+            <select
+              className="border p-2 rounded w-full"
+              value={holidayFor}
+              onChange={(e) => setHolidayFor(e.target.value as "" | "all" | string)}
+            >
+              <option value="">None</option>
+              <option value="all">All Grades</option>
+              {students && Array.from(new Set(students.map(s => s.grade))).map(g => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </div>
+
           {holidayFor && (
-            <span className="text-sm text-red-500">
-              {holidayFor === "all" ? "All students marked holiday" : `Grade ${holidayFor} marked holiday`}
-            </span>
+            <div className="min-w-[150px]">
+              <span className="text-sm text-red-500 block mt-5">
+                {holidayFor === "all" ? "All students marked holiday" : `Grade ${holidayFor} marked holiday`}
+              </span>
+            </div>
           )}
+
+          {/* Date Picker */}
+          <div className="flex-1 min-w-[180px]">
+            <Label className="text-xs">Select Date</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full justify-start text-left font-normal mt-1",
+                    !selectedDate && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={(date) => date && setSelectedDate(date)}
+                  initialFocus
+                  className="pointer-events-auto"
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Calendar */}
+      {/* Mini Calendar */}
       <Card>
         <CardHeader>
-          <CardTitle>Select Date</CardTitle>
-          <CardDescription>Choose the date for attendance</CardDescription>
+          <CardTitle>Mini Month Calendar</CardTitle>
+          <CardDescription>Mark holidays and add notes (stored locally)</CardDescription>
         </CardHeader>
         <CardContent>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                className={cn(
-                  "w-full justify-start text-left font-normal md:w-[280px]",
-                  !selectedDate && "text-muted-foreground"
-                )}
-              >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="single"
-                selected={selectedDate}
-                onSelect={(date) => date && setSelectedDate(date)}
-                initialFocus
-                className="pointer-events-auto"
-              />
-            </PopoverContent>
-          </Popover>
+          <div className="grid grid-cols-7 gap-2">
+            {daysInMonth.map((day) => {
+              const dayStr = format(day, "yyyy-MM-dd");
+              const dayData = miniCalendar[dayStr] || { holiday: false, note: "" };
+              return (
+                <div key={dayStr} className="flex flex-col items-center border rounded p-1">
+                  <button
+                    className={`w-full rounded text-sm mb-1 ${
+                      dayData.holiday ? "bg-red-500 text-white" : "bg-gray-100"
+                    }`}
+                    onClick={() => toggleMiniHoliday(dayStr)}
+                  >
+                    {format(day, "d")}
+                  </button>
+                  <Input
+                    type="text"
+                    value={dayData.note}
+                    onChange={(e) => updateMiniNote(dayStr, e.target.value)}
+                    placeholder="Note"
+                    className="text-xs p-1 w-full"
+                  />
+                </div>
+              );
+            })}
+          </div>
         </CardContent>
       </Card>
 
