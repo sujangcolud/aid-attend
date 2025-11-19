@@ -28,7 +28,7 @@ export default function ChaptersTracking() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
 
-  // Students for the user's center
+  // Fetch students for the center
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
@@ -43,7 +43,7 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Present students today
+  // Present students for the selected date
   const { data: presentToday = [] } = useQuery({
     queryKey: ["present-students", date, user?.center_id],
     queryFn: async () => {
@@ -59,23 +59,16 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Auto-select present students filtered by current grade
+  // Auto-select present students filtered by grade
   useEffect(() => {
     if (!presentToday) return;
-
-    // Students of the selected grade
-    const studentsOfGrade = students.filter(s =>
-      filterGrade === "all" || s.grade === filterGrade
-    );
-
-    const presentFiltered = studentsOfGrade
-      .filter(s => presentToday.includes(s.id))
+    const filtered = students
+      .filter(s => (filterGrade === "all" || s.grade === filterGrade) && presentToday.includes(s.id))
       .map(s => s.id);
-
-    setSelectedStudentIds(prev => Array.from(new Set([...prev, ...presentFiltered])));
+    setSelectedStudentIds(prev => Array.from(new Set([...prev, ...filtered])));
   }, [presentToday, filterGrade, students]);
 
-  // Unique previous chapters from this center
+  // Unique previous chapters for the center
   const { data: uniqueChapters = [] } = useQuery({
     queryKey: ["unique-chapters", user?.center_id],
     queryFn: async () => {
@@ -84,17 +77,14 @@ export default function ChaptersTracking() {
         .from("chapters")
         .select("id, subject, chapter_name, student_chapters(student_id, students(center_id))");
       if (error) throw error;
-
       // Only chapters from this center
-      const filtered = data.filter(ch =>
+      return data.filter(ch =>
         ch.student_chapters?.some((sc: any) => sc.students.center_id === user.center_id)
       );
-
-      return filtered;
     },
   });
 
-  // All chapters for table
+  // All chapters for display table
   const { data: chapters = [] } = useQuery({
     queryKey: ["chapters", user?.center_id],
     queryFn: async () => {
@@ -113,24 +103,23 @@ export default function ChaptersTracking() {
   const toggleStudentSelection = (id: string) => {
     setSelectedStudentIds(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
   };
-
   const selectAllStudents = () => {
     const filtered = students.filter(s => filterGrade === "all" || s.grade === filterGrade);
     setSelectedStudentIds(filtered.map(s => s.id));
   };
-
   const deselectAllStudents = () => setSelectedStudentIds([]);
 
   const toggleChapterExpand = (id: string) => {
     setExpandedChapters(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  // Add chapter mutation using selectedChapterId or new chapter
+  // Add chapter mutation with onConflict handling
   const addChapterMutation = useMutation({
     mutationFn: async () => {
       let chapter_id: string;
 
       if (selectedChapterId) {
+        // Previous chapter selected
         chapter_id = selectedChapterId;
       } else if (subject && chapterName) {
         const { data: chapterData, error } = await supabase
@@ -144,14 +133,17 @@ export default function ChaptersTracking() {
         throw new Error("Select previous chapter or create new one");
       }
 
-      // Link students
+      // Link students (allow multiple dates)
       const studentChapters = selectedStudentIds.map(id => ({
         student_id: id,
         chapter_id,
         completed: true,
         date_completed: date
       }));
-      const { error } = await supabase.from("student_chapters").insert(studentChapters, { onConflict: "ignore" });
+
+      const { error } = await supabase.from("student_chapters").insert(studentChapters, {
+        onConflict: ["student_id", "chapter_id", "date_completed"], // Prevent exact duplicate only
+      });
       if (error) throw error;
     },
     onSuccess: () => {
