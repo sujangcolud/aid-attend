@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -30,19 +30,24 @@ export default function ChaptersTracking() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
 
-  // Fetch students
+  // Fetch students for this center
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      let query = supabase.from("students").select("*").order("name");
-      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
+      let query = supabase
+        .from("students")
+        .select("*")
+        .order("name");
+      if (user?.role !== "admin" && user?.center_id) {
+        query = query.eq("center_id", user.center_id);
+      }
       const { data, error } = await query;
       if (error) throw error;
       return data;
     },
   });
 
-  // Fetch attendance for selected date
+  // Fetch attendance for the selected date
   const { data: presentToday = [] } = useQuery({
     queryKey: ["present-students", date, user?.center_id],
     queryFn: async () => {
@@ -50,22 +55,31 @@ export default function ChaptersTracking() {
         .from("attendance")
         .select("student_id")
         .eq("date", date)
-        .eq("status", "Present");
+        .eq("status", "present");
       if (error) throw error;
       return data.map((d: any) => d.student_id);
     },
   });
 
-  // Filtered students based on grade
-  const filteredStudents = students.filter((s) => filterGrade === "all" || s.grade === filterGrade);
+  // Auto select present students whenever date or grade changes
+  const filteredStudents = students.filter(
+    (s) => (filterGrade === "all" || s.grade === filterGrade)
+  );
 
-  // Auto select present students when date or grade changes
-  useEffect(() => {
-    const presentIds = filteredStudents.filter((s) => presentToday.includes(s.id)).map((s) => s.id);
+  // Update selectedStudentIds to include present students
+  const autoSelectPresent = () => {
+    const presentIds = filteredStudents
+      .filter((s) => presentToday.includes(s.id))
+      .map((s) => s.id);
     setSelectedStudentIds(presentIds);
+  };
+
+  // Call autoSelectPresent whenever date or grade changes
+  useState(() => {
+    autoSelectPresent();
   }, [date, filterGrade, students, presentToday]);
 
-  // Fetch chapters
+  // Fetch chapters for this center
   const { data: chapters = [] } = useQuery({
     queryKey: ["chapters", filterSubject, filterStudent, filterGrade, user?.center_id],
     queryFn: async () => {
@@ -98,11 +112,12 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Unique chapters
+  // Fetch unique chapters
   const { data: uniqueChapters = [] } = useQuery({
     queryKey: ["unique-chapters", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase.from("chapters").select("id, subject, chapter_name");
+      let query = supabase.from("chapters").select("id, subject, chapter_name");
+      const { data, error } = await query;
       if (error) throw error;
       const seen = new Set<string>();
       const unique = [];
@@ -215,7 +230,9 @@ export default function ChaptersTracking() {
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Record Chapter</DialogTitle>
-              <DialogDescription>Select a previously taught chapter or create a new one</DialogDescription>
+              <DialogDescription>
+                Select a previously taught chapter or create a new one
+              </DialogDescription>
             </DialogHeader>
 
             {/* Form */}
@@ -303,12 +320,7 @@ export default function ChaptersTracking() {
                         checked={selectedStudentIds.includes(student.id)}
                         onCheckedChange={() => toggleStudentSelection(student.id)}
                       />
-                      <label
-                        htmlFor={student.id}
-                        className={`text-sm font-medium leading-none cursor-pointer ${
-                          presentToday.includes(student.id) ? "text-green-600" : ""
-                        }`}
-                      >
+                      <label htmlFor={student.id} className="text-sm font-medium leading-none cursor-pointer">
                         {student.name} - Grade {student.grade}
                         {presentToday.includes(student.id) && <span className="ml-2 text-green-600 text-xs">(Present Today)</span>}
                       </label>
@@ -404,16 +416,9 @@ export default function ChaptersTracking() {
                           {chapter.student_chapters?.map((sc: any) => (
                             <span
                               key={sc.id}
-                              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                presentToday.includes(sc.student_id)
-                                  ? "bg-green-100 text-green-700"
-                                  : "bg-primary/10 text-primary"
-                              }`}
+                              className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary"
                             >
                               {sc.students?.name} - Grade {sc.students?.grade}
-                              {presentToday.includes(sc.student_id) && (
-                                <span className="ml-1 text-green-700 text-xs">(Present Today)</span>
-                              )}
                             </span>
                           ))}
                         </div>
