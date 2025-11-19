@@ -59,11 +59,9 @@ export default function TakeAttendance() {
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
       let query = supabase.from("students").select("id, name, grade").order("name");
-
       if (user?.role !== "admin" && user?.center_id) {
         query = query.eq("center_id", user.center_id);
       }
-
       const { data, error } = await query;
       if (error) throw error;
       return data as Student[];
@@ -79,13 +77,11 @@ export default function TakeAttendance() {
     queryKey: ["attendance", dateStr, centerStudentIds.join(",")],
     queryFn: async () => {
       if (!centerStudentIds.length) return [];
-
       const { data, error } = await supabase
         .from("attendance")
         .select("student_id, status, time_in, time_out, date")
         .eq("date", dateStr)
         .in("student_id", centerStudentIds);
-
       if (error) throw error;
       return data;
     },
@@ -98,19 +94,16 @@ export default function TakeAttendance() {
   useEffect(() => {
     async function fetchAttendanceDates() {
       if (!centerStudentIds.length) return;
-
       const { data, error } = await supabase
         .from("attendance")
         .select("date")
         .in("student_id", centerStudentIds)
         .order("date", { ascending: false });
-
       if (!error && data) {
         const uniqueDates = Array.from(new Set(data.map((d: any) => d.date)));
         setAttendanceDates(uniqueDates);
       }
     }
-
     fetchAttendanceDates();
   }, [centerStudentIds.join(",")]);
 
@@ -120,10 +113,8 @@ export default function TakeAttendance() {
   useEffect(() => {
     if (students) {
       const newAttendance: Record<string, AttendanceRecord> = {};
-
       students.forEach((student) => {
         const record = existingAttendance?.find((a) => a.student_id === student.id);
-
         newAttendance[student.id] = {
           present: record?.status === "Present",
           timeIn: record?.time_in || "",
@@ -131,7 +122,6 @@ export default function TakeAttendance() {
           studentId: student.id,
         };
       });
-
       setAttendance(newAttendance);
     }
   }, [students, existingAttendance]);
@@ -143,12 +133,14 @@ export default function TakeAttendance() {
     mutationFn: async () => {
       if (!centerStudentIds.length) return;
 
+      // 🔥 Delete only attendance of this center (does not affect others)
       await supabase
         .from("attendance")
         .delete()
         .eq("date", dateStr)
         .in("student_id", centerStudentIds);
 
+      // Prepare insert records
       const records = students!.map((student) => ({
         student_id: student.id,
         date: dateStr,
@@ -184,29 +176,29 @@ export default function TakeAttendance() {
     }));
   };
 
-  /* ------------------- ✅ FIXED ------------------- */
+  /* --------------------------------------------------------------------------
+    7️⃣ MARK ALL PRESENT / ABSENT ONLY FOR SELECTED GRADE
+  -------------------------------------------------------------------------- */
+  const filteredStudents =
+    gradeFilter === "all" ? students : students?.filter((s) => s.grade === gradeFilter);
+
   const markAllPresent = () => {
     if (!filteredStudents) return;
     const updated: Record<string, AttendanceRecord> = { ...attendance };
-
     filteredStudents.forEach((student) => {
-      updated[student.id] = { ...updated[student.id], present: true };
+      updated[student.id] = { ...attendance[student.id], present: true };
     });
-
     setAttendance(updated);
   };
 
   const markAllAbsent = () => {
     if (!filteredStudents) return;
     const updated: Record<string, AttendanceRecord> = { ...attendance };
-
     filteredStudents.forEach((student) => {
-      updated[student.id] = { ...updated[student.id], present: false, timeIn: "", timeOut: "" };
+      updated[student.id] = { ...attendance[student.id], present: false, timeIn: "", timeOut: "" };
     });
-
     setAttendance(updated);
   };
-  /* ------------------- ✅ END FIX ------------------- */
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -214,13 +206,7 @@ export default function TakeAttendance() {
   };
 
   /* --------------------------------------------------------------------------
-    7️⃣ FILTER STUDENTS BY GRADE
-  -------------------------------------------------------------------------- */
-  const filteredStudents =
-    gradeFilter === "all" ? students : students?.filter((s) => s.grade === gradeFilter);
-
-  /* --------------------------------------------------------------------------
-    8️⃣ MINI CALENDAR (UNCHANGED)
+    8️⃣ MINI CALENDAR & HEATMAP
   -------------------------------------------------------------------------- */
   const daysInMonth = eachDayOfInterval({
     start: startOfMonth(miniCalendarMonth),
@@ -230,25 +216,38 @@ export default function TakeAttendance() {
   const toggleMiniHoliday = (date: string) => {
     setMiniCalendar((prev) => ({
       ...prev,
-      [date]: {
-        holiday: !prev[date]?.holiday,
-        note: prev[date]?.note || "",
-      },
+      [date]: { holiday: !prev[date]?.holiday, note: prev[date]?.note || "" },
     }));
   };
 
   const updateMiniNote = (date: string, note: string) => {
     setMiniCalendar((prev) => ({
       ...prev,
-      [date]: {
-        holiday: prev[date]?.holiday || false,
-        note,
-      },
+      [date]: { holiday: prev[date]?.holiday || false, note },
     }));
   };
 
+  // Grade colors for heatmap
+  const gradeColors: Record<string, string> = {
+    "Grade 1": "#3B82F6",
+    "Grade 2": "#10B981",
+    "Grade 3": "#F59E0B",
+    "Grade 4": "#EF4444",
+    "Grade 5": "#8B5CF6",
+  };
+
+  const getColorForGrade = (grade: string) => gradeColors[grade] || "#9CA3AF";
+
+  const getAttendanceFraction = (grade: string) => {
+    if (!filteredStudents) return 0;
+    const gradeStudents = filteredStudents.filter((s) => s.grade === grade);
+    if (!gradeStudents.length) return 0;
+    const presentCount = gradeStudents.filter((s) => attendance[s.id]?.present).length;
+    return presentCount / gradeStudents.length;
+  };
+
   /* --------------------------------------------------------------------------
-    9️⃣ RETURN UI (UNCHANGED)
+    9️⃣ RETURN UI
   -------------------------------------------------------------------------- */
   return (
     <div className="space-y-6">
@@ -262,9 +261,7 @@ export default function TakeAttendance() {
         <CardHeader>
           <CardTitle>Filters</CardTitle>
         </CardHeader>
-
         <CardContent className="flex flex-wrap gap-4 items-end">
-          {/* Select Date */}
           <div className="flex-1 min-w-[180px]">
             <Label className="text-xs">Select Date</Label>
             <Popover>
@@ -280,7 +277,6 @@ export default function TakeAttendance() {
                   {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
                 </Button>
               </PopoverTrigger>
-
               <PopoverContent className="w-auto p-0" align="start">
                 <Calendar
                   mode="single"
@@ -291,7 +287,6 @@ export default function TakeAttendance() {
             </Popover>
           </div>
 
-          {/* Grade Filter */}
           <div className="flex-1 min-w-[120px]">
             <Label className="text-xs">Filter by Grade</Label>
             <select
@@ -309,7 +304,6 @@ export default function TakeAttendance() {
             </select>
           </div>
 
-          {/* Past Attendance */}
           <div className="flex-1 min-w-[180px]">
             <Label className="text-xs">Past Attendance</Label>
             <select
@@ -325,7 +319,6 @@ export default function TakeAttendance() {
             </select>
           </div>
 
-          {/* Toggle Mini Calendar */}
           <div className="flex-1 min-w-[150px] mt-4">
             <Button variant="outline" onClick={() => setShowMiniCalendar((prev) => !prev)}>
               {showMiniCalendar ? "Hide Mini Calendar" : "Show Mini Calendar"}{" "}
@@ -342,7 +335,6 @@ export default function TakeAttendance() {
             <CardTitle>Mini Month Calendar</CardTitle>
             <CardDescription>Mark holidays & add notes (local only)</CardDescription>
           </CardHeader>
-
           <CardContent>
             <div className="flex gap-2 mb-2 items-center">
               <Label className="text-xs">Select Month:</Label>
@@ -360,14 +352,11 @@ export default function TakeAttendance() {
             <div className="grid grid-cols-7 gap-2">
               {daysInMonth.map((day) => {
                 const dayStr = format(day, "yyyy-MM-dd");
-                const dayData =
-                  miniCalendar[dayStr] || {
-                    holiday: false,
-                    note: "",
-                  };
+                const dayData = miniCalendar[dayStr] || { holiday: false, note: "" };
+                const grades = Array.from(new Set(filteredStudents?.map((s) => s.grade) || []));
 
                 return (
-                  <div key={dayStr} className="flex flex-col items-center border rounded p-1">
+                  <div key={dayStr} className="flex flex-col items-center border rounded p-1 relative">
                     <button
                       className={`w-full rounded text-sm mb-1 ${
                         dayData.holiday ? "bg-red-500 text-white" : "bg-gray-100"
@@ -377,16 +366,49 @@ export default function TakeAttendance() {
                       {format(day, "d")}
                     </button>
 
+                    <div className="flex gap-0.5 mt-1 flex-wrap justify-center">
+                      {grades.map((g) => {
+                        const fraction = getAttendanceFraction(g);
+                        if (fraction === 0) return null;
+                        const size = Math.max(2, fraction * 6);
+                        return (
+                          <span
+                            key={g}
+                            className="rounded-full"
+                            style={{
+                              width: `${size}px`,
+                              height: `${size}px`,
+                              backgroundColor: getColorForGrade(g),
+                            }}
+                            title={`${Math.round(fraction * 100)}% of ${g} present`}
+                          />
+                        );
+                      })}
+                    </div>
+
                     <Input
                       type="text"
                       value={dayData.note}
                       onChange={(e) => updateMiniNote(dayStr, e.target.value)}
                       placeholder="Note"
-                      className="text-xs p-1 w-full"
+                      className="text-xs p-1 w-full mt-1"
                     />
                   </div>
                 );
               })}
+            </div>
+
+            {/* Legend */}
+            <div className="mt-2 flex flex-wrap gap-2">
+              {Object.entries(gradeColors).map(([g, color]) => (
+                <div key={g} className="flex items-center gap-1">
+                  <span
+                    className="rounded-full w-3 h-3"
+                    style={{ backgroundColor: color }}
+                  />
+                  <span className="text-xs">{g}</span>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -436,7 +458,6 @@ export default function TakeAttendance() {
                   </div>
 
                   <div className="flex gap-4 ml-7">
-                    {/* Time In */}
                     <div className="flex-1">
                       <Label
                         htmlFor={`time-in-${student.id}`}
@@ -453,7 +474,6 @@ export default function TakeAttendance() {
                       />
                     </div>
 
-                    {/* Time Out */}
                     <div className="flex-1">
                       <Label
                         htmlFor={`time-out-${student.id}`}
@@ -474,7 +494,8 @@ export default function TakeAttendance() {
               ))}
 
               <Button type="submit" className="w-full">
-                Save Attendance
+                Save attendance for {filteredStudents.length} student
+                {filteredStudents.length > 1 ? "s" : ""} of grade {gradeFilter}
               </Button>
             </form>
           ) : (
