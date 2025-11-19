@@ -7,10 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { CalendarIcon, Download, Brain, Loader2, BookOpen, FileText, Printer } from "lucide-react";
+import { CalendarIcon, Download, Brain, Loader2, BookOpen, FileText } from "lucide-react";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { toast } from "sonner";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function StudentReport() {
   const { user } = useAuth();
@@ -24,7 +24,7 @@ export default function StudentReport() {
   const [gradeFilter, setGradeFilter] = useState<string>("all");
   const [aiSummary, setAiSummary] = useState<string>("");
 
-  // Fetch students
+  // Fetch students (center-specific)
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
@@ -57,15 +57,14 @@ export default function StudentReport() {
     enabled: !!selectedStudentId,
   });
 
-  // Fetch chapter progress
+  // Fetch chapter progress with date range
   const { data: chapterProgress = [] } = useQuery({
     queryKey: ["student-chapters", selectedStudentId, subjectFilter, dateRange],
     queryFn: async () => {
       if (!selectedStudentId) return [];
-      let query = supabase.from("student_chapters").select("*, chapters(*)").eq("student_id", selectedStudentId)
-        .gte("date_completed", format(dateRange.from, "yyyy-MM-dd"))
-        .lte("date_completed", format(dateRange.to, "yyyy-MM-dd"));
+      let query = supabase.from("student_chapters").select("*, chapters(*)").eq("student_id", selectedStudentId);
       if (subjectFilter !== "all") query = query.eq("chapters.subject", subjectFilter);
+      query = query.gte("date_completed", format(dateRange.from, "yyyy-MM-dd")).lte("date_completed", format(dateRange.to, "yyyy-MM-dd"));
       const { data, error } = await query.order("date_completed", { ascending: false });
       if (error) throw error;
       return data;
@@ -73,7 +72,7 @@ export default function StudentReport() {
     enabled: !!selectedStudentId,
   });
 
-  // Fetch all chapters for completion %
+  // Fetch all chapters (center-specific)
   const { data: allChapters = [] } = useQuery({
     queryKey: ["all-chapters", user?.center_id],
     queryFn: async () => {
@@ -87,12 +86,10 @@ export default function StudentReport() {
 
   // Fetch test results
   const { data: testResults = [] } = useQuery({
-    queryKey: ["student-test-results", selectedStudentId, subjectFilter, dateRange],
+    queryKey: ["student-test-results", selectedStudentId, subjectFilter],
     queryFn: async () => {
       if (!selectedStudentId) return [];
-      let query = supabase.from("test_results").select("*, tests(*)").eq("student_id", selectedStudentId)
-        .gte("date_taken", format(dateRange.from, "yyyy-MM-dd"))
-        .lte("date_taken", format(dateRange.to, "yyyy-MM-dd"));
+      let query = supabase.from("test_results").select("*, tests(*)").eq("student_id", selectedStudentId);
       if (subjectFilter !== "all") query = query.eq("tests.subject", subjectFilter);
       const { data, error } = await query.order("date_taken", { ascending: false });
       if (error) throw error;
@@ -103,7 +100,7 @@ export default function StudentReport() {
 
   // Statistics
   const totalDays = attendanceData.length;
-  const presentDays = attendanceData.filter((a) => a.status === "Present").length;
+  const presentDays = attendanceData.filter(a => a.status === "Present").length;
   const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
 
   const totalTests = testResults.length;
@@ -122,7 +119,7 @@ export default function StudentReport() {
     ...testResults.map(t => t.tests?.subject).filter(Boolean)
   ]));
 
-  const selectedStudent = students.find((s) => s.id === selectedStudentId);
+  const selectedStudent = students.find(s => s.id === selectedStudentId);
 
   // AI Summary mutation
   const generateSummaryMutation = useMutation({
@@ -139,7 +136,9 @@ export default function StudentReport() {
     },
     onError: (error: any) => {
       console.error("Error generating summary:", error);
-      toast.error("Failed to generate AI summary");
+      if (error.message?.includes("429")) toast.error("Rate limit exceeded");
+      else if (error.message?.includes("402")) toast.error("AI credits depleted");
+      else toast.error("Failed to generate AI summary");
     },
   });
 
@@ -157,6 +156,15 @@ export default function StudentReport() {
       ["Present", presentDays],
       ["Absent", totalDays - presentDays],
       ["Percentage", attendancePercentage + "%"],
+      [""],
+      ["Chapter Progress"],
+      ["Chapter", "Subject", "Date Completed", "Status"],
+      ...chapterProgress.map(c => [
+        c.chapters?.chapter_name,
+        c.chapters?.subject,
+        format(new Date(c.date_completed), "PPP"),
+        c.completed ? "Completed" : "In Progress"
+      ]),
       [""],
       ["Test Results"],
       ["Test Name", "Subject", "Marks Obtained", "Total Marks", "Date"],
@@ -177,137 +185,94 @@ export default function StudentReport() {
     a.click();
   };
 
-  // Print
-  const handlePrint = () => {
-    const content = document.getElementById("printable-report");
-    if (content) {
-      const newWindow = window.open("", "_blank");
-      newWindow?.document.write(`
-        <html>
-          <head>
-            <title>Student Report - ${selectedStudent?.name}</title>
-            <style>
-              body { font-family: Arial, sans-serif; padding: 20px; }
-              h1, h2, h3 { margin: 0 0 10px 0; }
-              table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
-              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-              th { background-color: #f2f2f2; }
-              .badge { padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; }
-              .completed { background-color: #d1fae5; color: #065f46; }
-              .in-progress { background-color: #fef3c7; color: #92400e; }
-            </style>
-          </head>
-          <body>
-            ${content.innerHTML}
-          </body>
-        </html>
-      `);
-      newWindow?.document.close();
-      newWindow?.focus();
-      newWindow?.print();
-      newWindow?.close();
-    }
-  };
-
   return (
     <div className="space-y-6">
-      {/* Header and Print/Export */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Student Report</h1>
         {selectedStudentId && (
-          <div className="flex gap-2">
-            <Button onClick={exportToCSV} variant="outline">
-              <Download className="mr-2 h-4 w-4" /> Export CSV
-            </Button>
-            <Button onClick={handlePrint} variant="outline">
-              <Printer className="mr-2 h-4 w-4" /> Print
-            </Button>
-          </div>
+          <Button onClick={exportToCSV} variant="outline">
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
+          </Button>
         )}
       </div>
 
-      {/* Filters: all in one line */}
-      <div className="flex flex-wrap gap-4 items-end">
+      {/* Filters row */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Select value={gradeFilter} onValueChange={setGradeFilter}>
-          <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Grade" />
-          </SelectTrigger>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Grade" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Grades</SelectItem>
-            {Array.from(new Set(students.map(s => s.grade))).map((g) => (
-              <SelectItem key={g} value={g}>{g}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Input
-          type="date"
-          value={format(dateRange.from, "yyyy-MM-dd")}
-          onChange={(e) => setDateRange(prev => ({ ...prev, from: new Date(e.target.value) }))}
-        />
-        <Input
-          type="date"
-          value={format(dateRange.to, "yyyy-MM-dd")}
-          onChange={(e) => setDateRange(prev => ({ ...prev, to: new Date(e.target.value) }))}
-        />
-
-        <Select value={subjectFilter} onValueChange={setSubjectFilter}>
-          <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Subject" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Subjects</SelectItem>
-            {subjects.map((s) => (
-              <SelectItem key={s} value={s}>{s}</SelectItem>
-            ))}
+            {Array.from(new Set(students.map(s => s.grade))).map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
           </SelectContent>
         </Select>
 
         <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Select Student" />
-          </SelectTrigger>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Student" /></SelectTrigger>
           <SelectContent>
-            {filteredStudents.map((student) => (
-              <SelectItem key={student.id} value={student.id}>
-                {student.name} - Grade {student.grade}
-              </SelectItem>
+            {filteredStudents.map(s => (
+              <SelectItem key={s.id} value={s.id}>{s.name} - Grade {s.grade}</SelectItem>
             ))}
           </SelectContent>
         </Select>
+
+        <Select value={subjectFilter} onValueChange={setSubjectFilter}>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Subject" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Subjects</SelectItem>
+            {subjects.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+          </SelectContent>
+        </Select>
+
+        <div className="flex gap-2">
+          <Input
+            type="date"
+            value={format(dateRange.from, "yyyy-MM-dd")}
+            onChange={e => setDateRange(prev => ({ ...prev, from: new Date(e.target.value) }))}
+          />
+          <Input
+            type="date"
+            value={format(dateRange.to, "yyyy-MM-dd")}
+            onChange={e => setDateRange(prev => ({ ...prev, to: new Date(e.target.value) }))}
+          />
+        </div>
       </div>
 
       {selectedStudent && (
-        <div id="printable-report">
+        <>
           {/* Attendance Overview */}
           <Card>
             <CardHeader>
-              <CardTitle>Attendance Overview</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarIcon className="h-5 w-5" />
+                Attendance Overview
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-4 gap-4 mb-4">
+              <div className="grid gap-4 md:grid-cols-4 mb-4">
                 <div>Total Days: {totalDays}</div>
-                <div>Present: {presentDays}</div>
-                <div>Absent: {totalDays - presentDays}</div>
+                <div className="text-green-600">Present: {presentDays}</div>
+                <div className="text-red-600">Absent: {totalDays - presentDays}</div>
                 <div>Attendance %: {attendancePercentage}%</div>
               </div>
-              <div className="overflow-x-auto max-h-80">
-                <table className="w-full border">
-                  <thead className="bg-gray-100">
+              <div className="overflow-x-auto max-h-64 border rounded">
+                <table className="w-full">
+                  <thead className="bg-muted">
                     <tr>
-                      <th className="border px-2 py-1">Date</th>
-                      <th className="border px-2 py-1">Status</th>
-                      <th className="border px-2 py-1">Time In</th>
-                      <th className="border px-2 py-1">Time Out</th>
+                      <th className="px-4 py-2">Date</th>
+                      <th className="px-4 py-2">Status</th>
+                      <th className="px-4 py-2">Time In</th>
+                      <th className="px-4 py-2">Time Out</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {attendanceData.map((record) => (
-                      <tr key={record.id}>
-                        <td className="border px-2 py-1">{format(new Date(record.date), "PPP")}</td>
-                        <td className="border px-2 py-1">{record.status}</td>
-                        <td className="border px-2 py-1">{record.time_in || "-"}</td>
-                        <td className="border px-2 py-1">{record.time_out || "-"}</td>
+                    {attendanceData.map(record => (
+                      <tr key={record.id} className="border-t">
+                        <td className="px-4 py-2">{format(new Date(record.date), "PPP")}</td>
+                        <td className={`px-4 py-2 ${record.status === "Present" ? "text-green-600" : "text-red-600"}`}>{record.status}</td>
+                        <td className="px-4 py-2">{record.time_in || "-"}</td>
+                        <td className="px-4 py-2">{record.time_out || "-"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -316,29 +281,34 @@ export default function StudentReport() {
             </CardContent>
           </Card>
 
-          {/* Chapter Progress */}
+          {/* Chapters Studied Table */}
           <Card>
             <CardHeader>
-              <CardTitle>Chapter Progress</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <BookOpen className="h-5 w-5" />
+                Chapters Studied
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto max-h-80">
-                <table className="w-full border">
-                  <thead className="bg-gray-100">
+              <div className="overflow-x-auto max-h-64 border rounded">
+                <table className="w-full">
+                  <thead className="bg-muted">
                     <tr>
-                      <th className="border px-2 py-1">Chapter</th>
-                      <th className="border px-2 py-1">Subject</th>
-                      <th className="border px-2 py-1">Date Completed</th>
-                      <th className="border px-2 py-1">Status</th>
+                      <th className="px-4 py-2">Chapter</th>
+                      <th className="px-4 py-2">Subject</th>
+                      <th className="px-4 py-2">Date Completed</th>
+                      <th className="px-4 py-2">Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {chapterProgress.map((cp) => (
-                      <tr key={cp.id}>
-                        <td className="border px-2 py-1">{cp.chapters?.chapter_name}</td>
-                        <td className="border px-2 py-1">{cp.chapters?.subject}</td>
-                        <td className="border px-2 py-1">{format(new Date(cp.date_completed), "PPP")}</td>
-                        <td className="border px-2 py-1">{cp.completed ? "Completed" : "In Progress"}</td>
+                    {chapterProgress.map(cp => (
+                      <tr key={cp.id} className="border-t">
+                        <td className="px-4 py-2">{cp.chapters?.chapter_name}</td>
+                        <td className="px-4 py-2">{cp.chapters?.subject}</td>
+                        <td className="px-4 py-2">{format(new Date(cp.date_completed), "PPP")}</td>
+                        <td className={`px-4 py-2 ${cp.completed ? "text-green-600" : "text-yellow-600"}`}>
+                          {cp.completed ? "Completed" : "In Progress"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -350,54 +320,46 @@ export default function StudentReport() {
           {/* Test Results */}
           <Card>
             <CardHeader>
-              <CardTitle>Test Results</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Test Results
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto max-h-80">
-                <table className="w-full border">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="border px-2 py-1">Test Name</th>
-                      <th className="border px-2 py-1">Subject</th>
-                      <th className="border px-2 py-1">Marks Obtained</th>
-                      <th className="border px-2 py-1">Total Marks</th>
-                      <th className="border px-2 py-1">Percentage</th>
-                      <th className="border px-2 py-1">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {testResults.map((t) => (
-                      <tr key={t.id}>
-                        <td className="border px-2 py-1">{t.tests?.name}</td>
-                        <td className="border px-2 py-1">{t.tests?.subject}</td>
-                        <td className="border px-2 py-1">{t.marks_obtained}</td>
-                        <td className="border px-2 py-1">{t.tests?.total_marks}</td>
-                        <td className="border px-2 py-1">{Math.round((t.marks_obtained / (t.tests?.total_marks || 1)) * 100)}%</td>
-                        <td className="border px-2 py-1">{format(new Date(t.date_taken), "PPP")}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="grid gap-4 md:grid-cols-3 mb-6">
+                <div>Total Tests: {totalTests}</div>
+                <div>Average Score: {averagePercentage}%</div>
+                <div>Total Marks: {totalMarksObtained}/{totalMaxMarks}</div>
               </div>
             </CardContent>
           </Card>
 
           {/* AI Summary */}
           <Card>
-            <CardHeader>
-              <CardTitle>AI Performance Summary</CardTitle>
+            <CardHeader className="flex justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Brain className="h-5 w-5" />
+                AI Performance Summary
+              </CardTitle>
+              <Button onClick={() => generateSummaryMutation.mutate()} size="sm">
+                {generateSummaryMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "Generate"
+                )}
+              </Button>
             </CardHeader>
             <CardContent>
               {aiSummary ? (
-                <Textarea value={aiSummary} onChange={e => setAiSummary(e.target.value)} rows={12} className="resize-none" />
+                <Textarea value={aiSummary} rows={12} className="resize-none" onChange={e => setAiSummary(e.target.value)} />
               ) : (
-                <p className="text-muted-foreground py-8 text-center">
-                  Click "Generate AI Summary" to get insights
+                <p className="text-muted-foreground text-center py-8">
+                  Click "Generate AI Summary" to get insights about this student's performance
                 </p>
               )}
             </CardContent>
           </Card>
-        </div>
+        </>
       )}
     </div>
   );
