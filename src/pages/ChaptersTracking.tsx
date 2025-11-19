@@ -17,7 +17,6 @@ import { format } from "date-fns";
 export default function ChaptersTracking() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [subject, setSubject] = useState("");
@@ -29,24 +28,19 @@ export default function ChaptersTracking() {
   const [selectedChapterId, setSelectedChapterId] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  // Fetch students for this center
+  // Fetch students
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      let query = supabase
-        .from("students")
-        .select("*")
-        .order("name");
-      if (user?.role !== "admin" && user?.center_id) {
-        query = query.eq("center_id", user.center_id);
-      }
+      let query = supabase.from("students").select("*").order("name");
+      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
       const { data, error } = await query;
       if (error) throw error;
       return data || [];
     },
   });
 
-  // Fetch chapters with linked student_chapters and students
+  // Fetch chapters
   const { data: chapters = [] } = useQuery({
     queryKey: ["chapters", filterSubject, filterStudent, filterGrade, user?.center_id],
     queryFn: async () => {
@@ -56,19 +50,23 @@ export default function ChaptersTracking() {
         .order("date_taught", { ascending: false });
 
       if (filterSubject !== "all") query = query.eq("subject", filterSubject);
+
       const { data, error } = await query;
       if (error) throw error;
 
+      // center filter
       let filtered = data.filter((chapter: any) =>
         chapter.student_chapters?.some((sc: any) => sc.students?.center_id === user?.center_id)
       );
 
+      // student filter
       if (filterStudent !== "all") {
         filtered = filtered.filter((chapter: any) =>
           chapter.student_chapters?.some((sc: any) => sc.student_id === filterStudent)
         );
       }
 
+      // grade filter
       if (filterGrade !== "all") {
         filtered = filtered.filter((chapter: any) =>
           chapter.student_chapters?.some((sc: any) => sc.students?.grade === filterGrade)
@@ -80,14 +78,12 @@ export default function ChaptersTracking() {
     enabled: !!user,
   });
 
-  // Fetch unique chapters for dropdown
+  // Unique chapters for modal dropdown
   const { data: uniqueChapters = [] } = useQuery({
     queryKey: ["unique-chapters", user?.center_id],
     queryFn: async () => {
       let query = supabase.from("chapters").select("id, subject, chapter_name, center_id");
-      if (user?.role !== "admin" && user?.center_id) {
-        query = query.eq("center_id", user.center_id);
-      }
+      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
       const { data, error } = await query;
       if (error) throw error;
 
@@ -105,7 +101,7 @@ export default function ChaptersTracking() {
     enabled: !!user,
   });
 
-  // Fetch attendance for selected date
+  // Attendance for date
   const { data: attendanceForDate = [] } = useQuery({
     queryKey: ["attendance-by-date", date, user?.center_id],
     queryFn: async () => {
@@ -166,16 +162,17 @@ export default function ChaptersTracking() {
         completed: true,
         date_completed: date,
       }));
+
       if (studentChapters.length > 0) {
         const { error: linkError } = await supabase.from("student_chapters").insert(studentChapters);
         if (linkError) throw linkError;
       }
+
       return true;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
       queryClient.invalidateQueries({ queryKey: ["unique-chapters"] });
-      queryClient.invalidateQueries({ queryKey: ["student-chapters"] });
       toast.success("Chapter recorded for selected students");
       setSelectedStudentIds([]);
       setSubject("");
@@ -204,7 +201,9 @@ export default function ChaptersTracking() {
   });
 
   const toggleStudentSelection = (studentId: string) => {
-    setSelectedStudentIds((prev) => (prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]));
+    setSelectedStudentIds((prev) =>
+      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
+    );
   };
 
   const filteredStudentsForModal = useMemo(() => {
@@ -226,14 +225,13 @@ export default function ChaptersTracking() {
     const currentFilteredIds = filteredStudentsForModal.map((s: any) => s.id);
     const autoSelect = presentStudentIdsForDate.filter((id) => currentFilteredIds.includes(id));
     setSelectedStudentIds(autoSelect);
-  }, [filterGrade, date, attendanceForDate, students, filteredStudentsForModal, presentStudentIdsForDate]);
+  }, [filterGrade, date, attendanceForDate, students]);
 
-  const subjects = Array.from(new Set(chapters.map((c: any) => c.subject).filter(Boolean)));
+  const subjects = Array.from(new Set(chapters.map((c: any) => c?.subject).filter(Boolean)));
   const grades = Array.from(new Set(students.map((s: any) => s.grade).filter(Boolean)));
 
   return (
     <div className="space-y-6">
-      {/* Header + Record Chapter Modal */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Chapters Tracking</h1>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -246,7 +244,7 @@ export default function ChaptersTracking() {
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Record Chapter</DialogTitle>
-              <DialogDescription> Select a previously taught chapter or create a new one </DialogDescription>
+              <DialogDescription>Select a previously taught chapter or create a new one</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 py-4">
@@ -310,11 +308,12 @@ export default function ChaptersTracking() {
                     <Users className="h-4 w-4" /> Select Students ({selectedStudentIds.length} selected)
                   </Label>
                   <div className="flex gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}> Select All </Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedStudentIds([])}> Clear </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}>Select All</Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedStudentIds([])}>Clear</Button>
                   </div>
                 </div>
 
+                {/* Grade Filter */}
                 <div className="mt-2">
                   <Label>Filter by Grade</Label>
                   <Select value={filterGrade} onValueChange={setFilterGrade}>
@@ -330,10 +329,7 @@ export default function ChaptersTracking() {
                   {filteredStudentsForModal.map((student: any) => {
                     const isPresent = presentStudentIdsForDate.includes(student.id);
                     return (
-                      <div
-                        key={student.id}
-                        className={`flex items-center space-x-2 p-2 rounded ${isPresent ? "bg-green-50" : ""}`}
-                      >
+                      <div key={student.id} className={`flex items-center space-x-2 p-2 rounded ${isPresent ? "bg-green-50" : ""}`}>
                         <Checkbox
                           id={student.id}
                           checked={selectedStudentIds.includes(student.id)}
@@ -346,6 +342,7 @@ export default function ChaptersTracking() {
                       </div>
                     );
                   })}
+
                   {filteredStudentsForModal.length === 0 && (
                     <p className="text-sm text-muted-foreground">No students found for the selected grade.</p>
                   )}
@@ -364,7 +361,6 @@ export default function ChaptersTracking() {
         </Dialog>
       </div>
 
-      {/* Chapters List */}
       <Card>
         <CardHeader>
           <CardTitle>Chapters Taught</CardTitle>
@@ -379,7 +375,6 @@ export default function ChaptersTracking() {
                 </SelectContent>
               </Select>
             </div>
-
             <div className="flex-1">
               <Label>Filter by Student</Label>
               <Select value={filterStudent} onValueChange={setFilterStudent}>
@@ -390,7 +385,6 @@ export default function ChaptersTracking() {
                 </SelectContent>
               </Select>
             </div>
-
             <div className="flex-1">
               <Label>Filter by Grade</Label>
               <Select value={filterGrade} onValueChange={setFilterGrade}>
@@ -406,31 +400,37 @@ export default function ChaptersTracking() {
 
         <CardContent>
           <div className="space-y-4">
-            {chapters.map((chapter: any) => (
+            {chapters?.map((chapter: any) => (
               <div key={chapter.id} className="border rounded-lg p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
-                      <h3 className="font-semibold text-lg">{chapter.chapter_name ?? "Unnamed Chapter"}</h3>
-                      <span className="text-sm text-muted-foreground">{chapter.subject}</span>
+                      <h3 className="font-semibold text-lg">{chapter?.chapter_name ?? "Unnamed Chapter"}</h3>
+                      <span className="text-sm text-muted-foreground">{chapter?.subject ?? "Unknown Subject"}</span>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-2"> Date Taught: {format(new Date(chapter.date_taught), "PPP")} </p>
-                    {chapter.notes && <p className="text-sm mb-2">{chapter.notes}</p>}
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Date Taught: {chapter?.date_taught ? format(new Date(chapter.date_taught), "PPP") : "Unknown"}
+                    </p>
+                    {chapter?.notes && <p className="text-sm mb-2">{chapter.notes}</p>}
                     <div className="flex flex-wrap gap-2 mt-3">
-                      {chapter.student_chapters?.map((sc: any) => (
+                      {chapter?.student_chapters?.map((sc: any) => (
                         <span key={sc.id} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
-                          {sc.students?.name} - Grade {sc.students?.grade}
+                          {sc.students?.name ?? "Unknown Student"} - Grade {sc.students?.grade ?? "N/A"}
                         </span>
                       ))}
                     </div>
                   </div>
-                  <Button variant="destructive" size="sm" onClick={() => deleteChapterMutation.mutate(chapter.id)}>
+                  <Button variant
+                  ="destructive" size="sm" onClick={() => deleteChapterMutation.mutate(chapter.id)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
             ))}
-            {chapters.length === 0 && <p className="text-sm text-muted-foreground">No chapters found.</p>}
+
+            {chapters.length === 0 && (
+              <p className="text-sm text-muted-foreground">No chapters found for the selected filters.</p>
+            )}
           </div>
         </CardContent>
       </Card>
