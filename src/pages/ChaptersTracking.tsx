@@ -2,14 +2,32 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Trash2, Users, Plus, ChevronDown, ChevronUp } from "lucide-react";
 import { format } from "date-fns";
@@ -34,10 +52,7 @@ export default function ChaptersTracking() {
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      let query = supabase
-        .from("students")
-        .select("*")
-        .order("name");
+      let query = supabase.from("students").select("*").order("name");
       if (user?.role !== "admin" && user?.center_id) {
         query = query.eq("center_id", user.center_id);
       }
@@ -55,7 +70,7 @@ export default function ChaptersTracking() {
         .from("attendance")
         .select("student_id")
         .eq("date", date)
-        .eq("status", "Present");
+        .eq("status", "present");
       if (error) throw error;
       return data.map((d: any) => d.student_id);
     },
@@ -66,14 +81,18 @@ export default function ChaptersTracking() {
     (s) => filterGrade === "all" || s.grade === filterGrade
   );
 
-  useEffect(() => {
+  const autoSelectPresent = () => {
     const presentIds = filteredStudents
       .filter((s) => presentToday.includes(s.id))
       .map((s) => s.id);
     setSelectedStudentIds(presentIds);
+  };
+
+  useEffect(() => {
+    autoSelectPresent();
   }, [date, filterGrade, students, presentToday]);
 
-  // Fetch chapters for this center
+  // Fetch chapters for this center only
   const { data: chapters = [] } = useQuery({
     queryKey: ["chapters", filterSubject, filterStudent, filterGrade, user?.center_id],
     queryFn: async () => {
@@ -88,7 +107,9 @@ export default function ChaptersTracking() {
       if (error) throw error;
 
       let filtered = data.filter((chapter: any) =>
-        chapter.student_chapters.some((sc: any) => sc.students.center_id === user?.center_id)
+        chapter.student_chapters.some(
+          (sc: any) => sc.students.center_id === user?.center_id
+        )
       );
 
       if (filterStudent !== "all") {
@@ -111,11 +132,10 @@ export default function ChaptersTracking() {
   const { data: uniqueChapters = [] } = useQuery({
     queryKey: ["unique-chapters", user?.center_id],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from("chapters")
         .select("id, subject, chapter_name")
-        .eq("center_id", user?.center_id); // <-- only center-specific
-      const { data, error } = await query;
+        .eq("center_id", user?.center_id);
       if (error) throw error;
 
       const seen = new Set<string>();
@@ -131,16 +151,16 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Add chapter mutation
+  // Add chapter
   const addChapterMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedStudentIds.length) throw new Error("No students selected");
+      if (!selectedChapterId && (!subject || !chapterName)) {
+        throw new Error("Select a previous chapter or enter a new one");
+      }
 
       let chapterId: string;
 
-      if (selectedChapterId && (subject || chapterName)) {
-        throw new Error("Select either a previous chapter OR enter a new one, not both");
-      } else if (selectedChapterId) {
+      if (selectedChapterId) {
         const selectedChapter = uniqueChapters.find((c) => c.id === selectedChapterId);
         if (!selectedChapter) throw new Error("Chapter not found");
         const { data: chapterData, error } = await supabase
@@ -156,7 +176,7 @@ export default function ChaptersTracking() {
           .single();
         if (error) throw error;
         chapterId = chapterData.id;
-      } else if (subject && chapterName) {
+      } else {
         const { data: chapterData, error } = await supabase
           .from("chapters")
           .insert({
@@ -170,8 +190,6 @@ export default function ChaptersTracking() {
           .single();
         if (error) throw error;
         chapterId = chapterData.id;
-      } else {
-        throw new Error("Select previous chapter or enter new one");
       }
 
       const studentChapters = selectedStudentIds.map((studentId) => ({
@@ -181,7 +199,9 @@ export default function ChaptersTracking() {
         date_completed: date,
       }));
 
-      const { error: linkError } = await supabase.from("student_chapters").insert(studentChapters);
+      const { error: linkError } = await supabase
+        .from("student_chapters")
+        .insert(studentChapters);
       if (linkError) throw linkError;
     },
     onSuccess: () => {
@@ -234,7 +254,7 @@ export default function ChaptersTracking() {
 
   return (
     <div className="space-y-6">
-      {/* Header and Dialog */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Chapters Tracking</h1>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -251,13 +271,13 @@ export default function ChaptersTracking() {
               </DialogDescription>
             </DialogHeader>
 
+            {/* Form */}
             <div className="space-y-4 py-4">
               <div>
                 <Label>Date</Label>
                 <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
 
-              {/* Previous Chapters */}
               <div className={`space-y-3 border rounded-lg p-4 ${selectedChapterId ? "border-primary" : ""}`}>
                 <Label className="text-base font-semibold">Select from Previous Chapters</Label>
                 {uniqueChapters.length > 0 ? (
@@ -274,7 +294,7 @@ export default function ChaptersTracking() {
                     </SelectContent>
                   </Select>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No previous chapters found for your center.</p>
+                  <p className="text-sm text-muted-foreground">No previous chapters found.</p>
                 )}
               </div>
 
@@ -287,7 +307,6 @@ export default function ChaptersTracking() {
                 </div>
               </div>
 
-              {/* New Chapter */}
               <div className={`space-y-3 border rounded-lg p-4 ${subject && chapterName ? "border-primary" : ""}`}>
                 <Label className="text-base font-semibold">Create New Chapter</Label>
                 <div className="grid grid-cols-2 gap-4">
@@ -302,18 +321,12 @@ export default function ChaptersTracking() {
                 </div>
               </div>
 
-              {selectedChapterId && (subject || chapterName) && (
-                <p className="text-red-600 text-sm mt-1">
-                  Please select either a previous chapter OR enter a new one, not both.
-                </p>
-              )}
-
               <div>
                 <Label>Notes (Optional)</Label>
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional notes..." rows={2} />
               </div>
 
-              {/* Students */}
+              {/* Students + Grade Filter */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <Label className="flex items-center gap-2">
@@ -322,6 +335,17 @@ export default function ChaptersTracking() {
                   <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}>
                     Select All
                   </Button>
+                </div>
+
+                <div className="mt-2">
+                  <Label>Filter by Grade</Label>
+                  <Select value={filterGrade} onValueChange={setFilterGrade}>
+                    <SelectTrigger><SelectValue placeholder="All Grades" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Grades</SelectItem>
+                      {grades.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
@@ -343,12 +367,7 @@ export default function ChaptersTracking() {
 
               <Button
                 onClick={() => addChapterMutation.mutate()}
-                disabled={
-                  selectedStudentIds.length === 0 ||
-                  (selectedChapterId && (subject || chapterName)) ||
-                  (!selectedChapterId && (!subject || !chapterName)) ||
-                  addChapterMutation.isPending
-                }
+                disabled={selectedStudentIds.length === 0 || (!selectedChapterId && (!subject || !chapterName)) || addChapterMutation.isPending}
                 className="w-full"
               >
                 Record Chapter for {selectedStudentIds.length} Student(s)
@@ -410,7 +429,7 @@ export default function ChaptersTracking() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
-                        <h3 className="font-semibold text-lg">{chapter.chapter_name}</h3>
+                        <h3 className="font-semibold text-lg">{chapter.chapter_name || "Untitled Chapter"}</h3>
                         <span className="text-sm text-muted-foreground">{chapter.subject}</span>
                       </div>
                       <p className="text-sm text-muted-foreground mb-2">
