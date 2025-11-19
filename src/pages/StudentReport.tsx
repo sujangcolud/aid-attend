@@ -6,9 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CalendarIcon, Download, Brain, Loader2, BookOpen, FileText, Printer } from "lucide-react";
+import { Download, Printer } from "lucide-react";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { toast } from "sonner";
 
@@ -36,7 +35,6 @@ export default function StudentReport() {
     },
   });
 
-  // Filter students by grade
   const filteredStudents = students.filter(s => gradeFilter === "all" || s.grade === gradeFilter);
 
   // Fetch attendance
@@ -192,9 +190,6 @@ export default function StudentReport() {
               table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
               th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
               th { background-color: #f2f2f2; }
-              .badge { padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; }
-              .completed { background-color: #d1fae5; color: #065f46; }
-              .in-progress { background-color: #fef3c7; color: #92400e; }
             </style>
           </head>
           <body>
@@ -226,7 +221,7 @@ export default function StudentReport() {
         )}
       </div>
 
-      {/* Filters: all in one line */}
+      {/* Filters */}
       <div className="flex flex-wrap gap-4 items-end">
         <Select value={gradeFilter} onValueChange={setGradeFilter}>
           <SelectTrigger className="w-[150px]">
@@ -316,7 +311,7 @@ export default function StudentReport() {
             </CardContent>
           </Card>
 
-          {/* Chapter Progress */}
+          {/* Chapter Progress with Notes */}
           <Card>
             <CardHeader>
               <CardTitle>Chapter Progress</CardTitle>
@@ -329,7 +324,7 @@ export default function StudentReport() {
                       <th className="border px-2 py-1">Chapter</th>
                       <th className="border px-2 py-1">Subject</th>
                       <th className="border px-2 py-1">Date Completed</th>
-                      <th className="border px-2 py-1">Status</th>
+                      <th className="border px-2 py-1">Notes</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -338,7 +333,7 @@ export default function StudentReport() {
                         <td className="border px-2 py-1">{cp.chapters?.chapter_name}</td>
                         <td className="border px-2 py-1">{cp.chapters?.subject}</td>
                         <td className="border px-2 py-1">{format(new Date(cp.date_completed), "PPP")}</td>
-                        <td className="border px-2 py-1">{cp.completed ? "Completed" : "In Progress"}</td>
+                        <td className="border px-2 py-1">{cp.chapters?.notes || "-"}</td>
                       </tr>
                     ))}
                   </tbody>
