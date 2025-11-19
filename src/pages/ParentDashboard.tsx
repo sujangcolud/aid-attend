@@ -168,6 +168,60 @@ const ParentDashboardContent = () => {
     navigate('/login-parent');
   };
 
+  // --------------------------
+  // Helper: robust time formatter
+  // --------------------------
+  const formatTimeValue = (timeVal, dateVal) => {
+    if (!timeVal && timeVal !== 0) return '-';
+
+    // If already a Date object
+    if (timeVal instanceof Date) {
+      if (isNaN(timeVal)) return '-';
+      return timeVal.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // Try parsing directly
+    let d = new Date(timeVal);
+    if (!isNaN(d)) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // timeVal might be "HH:mm" or "HH:mm:ss" — combine with dateVal (a.date)
+    if (typeof timeVal === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(timeVal)) {
+      let datePart = null;
+
+      if (dateVal) {
+        try {
+          // dateVal might be a Date object or ISO string; normalize to YYYY-MM-DD
+          const dtemp = new Date(dateVal);
+          if (!isNaN(dtemp)) {
+            datePart = dtemp.toISOString().split('T')[0];
+          } else if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateVal)) {
+            datePart = dateVal.split('T')[0];
+          }
+        } catch (e) {
+          datePart = null;
+        }
+      }
+
+      // fallback to today's date if datePart not available
+      if (!datePart) {
+        datePart = new Date().toISOString().split('T')[0];
+      }
+
+      // Try ISO combined form first
+      d = new Date(`${datePart}T${timeVal}`);
+      if (!isNaN(d)) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      // Try space-separated (some engines parse this)
+      d = new Date(`${datePart} ${timeVal}`);
+      if (!isNaN(d)) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // If all parsing fails, return placeholder
+    return '-';
+  };
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -292,11 +346,8 @@ const ParentDashboardContent = () => {
                   <TableRow>
                     <TableHead>Date</TableHead>
                     <TableHead>Status</TableHead>
-
-                    {/* ✅ ADDED */}
                     <TableHead>Time In</TableHead>
                     <TableHead>Time Out</TableHead>
-
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -307,17 +358,12 @@ const ParentDashboardContent = () => {
                         {a.status}
                       </TableCell>
 
-                      {/* ✅ ADDED */}
                       <TableCell>
-                        {a.time_in
-                          ? new Date(a.time_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                          : '-'}
+                        {formatTimeValue(a.time_in, a.date)}
                       </TableCell>
 
                       <TableCell>
-                        {a.time_out
-                          ? new Date(a.time_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                          : '-'}
+                        {formatTimeValue(a.time_out, a.date)}
                       </TableCell>
 
                     </TableRow>
