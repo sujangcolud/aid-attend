@@ -30,7 +30,7 @@ export default function ChaptersTracking() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
 
-  // Fetch students for this center
+  // Fetch students
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
@@ -44,7 +44,7 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Fetch attendance for the selected date
+  // Fetch present students for selected date
   const { data: presentToday = [] } = useQuery({
     queryKey: ["present-students", date, user?.center_id],
     queryFn: async () => {
@@ -58,12 +58,12 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Filtered students based on grade
+  // Filter students by grade
   const filteredStudents = students.filter(
     (s) => filterGrade === "all" || s.grade === filterGrade
   );
 
-  // Auto select present students whenever date or grade changes
+  // Auto-select present students whenever date, grade, or student list changes
   useEffect(() => {
     const presentIds = filteredStudents
       .filter((s) => presentToday.includes(s.id))
@@ -71,7 +71,7 @@ export default function ChaptersTracking() {
     setSelectedStudentIds(presentIds);
   }, [date, filterGrade, students, presentToday]);
 
-  // Fetch chapters for this center
+  // Fetch chapters
   const { data: chapters = [] } = useQuery({
     queryKey: ["chapters", filterSubject, filterStudent, filterGrade, user?.center_id],
     queryFn: async () => {
@@ -86,9 +86,7 @@ export default function ChaptersTracking() {
       if (error) throw error;
 
       let filtered = data.filter((chapter: any) =>
-        chapter.student_chapters.some(
-          (sc: any) => sc.students.center_id === user?.center_id
-        )
+        chapter.student_chapters.some((sc: any) => sc.students.center_id === user?.center_id)
       );
 
       if (filterStudent !== "all") {
@@ -111,9 +109,7 @@ export default function ChaptersTracking() {
   const { data: uniqueChapters = [] } = useQuery({
     queryKey: ["unique-chapters", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("chapters")
-        .select("id, subject, chapter_name");
+      const { data, error } = await supabase.from("chapters").select("id, subject, chapter_name");
       if (error) throw error;
 
       const seen = new Set<string>();
@@ -129,11 +125,10 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Add chapter mutation
+  // Add chapter
   const addChapterMutation = useMutation({
     mutationFn: async () => {
       let chapterId: string;
-
       if (selectedChapterId) {
         const selectedChapter = uniqueChapters.find((c) => c.id === selectedChapterId);
         if (!selectedChapter) throw new Error("Chapter not found");
@@ -144,27 +139,25 @@ export default function ChaptersTracking() {
             subject: selectedChapter.subject,
             chapter_name: selectedChapter.chapter_name,
             date_taught: date,
-            notes: notes || null
+            notes: notes || null,
           })
           .select()
           .single();
         if (error) throw error;
         chapterId = chapterData.id;
-
       } else if (subject && chapterName) {
         const { data: chapterData, error } = await supabase
           .from("chapters")
           .insert({
             subject,
-            chapter_name: chapterName, // <-- fixed
+            chapter_name: chapterName,
             date_taught: date,
-            notes: notes || null
+            notes: notes || null,
           })
           .select()
           .single();
         if (error) throw error;
         chapterId = chapterData.id;
-
       } else {
         throw new Error("Select a previous chapter or enter a new one");
       }
@@ -195,7 +188,7 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Delete chapter mutation
+  // Delete chapter
   const deleteChapterMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from("chapters").delete().eq("id", id);
@@ -212,9 +205,7 @@ export default function ChaptersTracking() {
 
   const toggleStudentSelection = (studentId: string) => {
     setSelectedStudentIds((prev) =>
-      prev.includes(studentId)
-        ? prev.filter((id) => id !== studentId)
-        : [...prev, studentId]
+      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
     );
   };
 
@@ -289,11 +280,19 @@ export default function ChaptersTracking() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label>Subject</Label>
-                    <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g., Mathematics" />
+                    <Input
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      placeholder="e.g., Mathematics"
+                    />
                   </div>
                   <div>
                     <Label>Chapter Name</Label>
-                    <Input value={chapterName} onChange={(e) => setChapterName(e.target.value)} placeholder="e.g., Algebra" />
+                    <Input
+                      value={chapterName}
+                      onChange={(e) => setChapterName(e.target.value)}
+                      placeholder="e.g., Algebra"
+                    />
                   </div>
                 </div>
               </div>
@@ -309,16 +308,24 @@ export default function ChaptersTracking() {
                   <Label className="flex items-center gap-2">
                     <Users className="h-4 w-4" /> Select Students ({selectedStudentIds.length} selected)
                   </Label>
-                  <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}>Select All</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}>
+                    Select All
+                  </Button>
                 </div>
 
                 <div className="mt-2">
                   <Label>Filter by Grade</Label>
                   <Select value={filterGrade} onValueChange={setFilterGrade}>
-                    <SelectTrigger><SelectValue placeholder="All Grades" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Grades" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Grades</SelectItem>
-                      {grades.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                      {grades.map((g) => (
+                        <SelectItem key={g} value={g}>
+                          {g}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -332,7 +339,8 @@ export default function ChaptersTracking() {
                         onCheckedChange={() => toggleStudentSelection(student.id)}
                       />
                       <label htmlFor={student.id} className="text-sm font-medium leading-none cursor-pointer">
-                        {student.name} - Grade {student.grade} {presentToday.includes(student.id) && <span className="ml-2 text-green-600 text-xs">(Present Today)</span>}
+                        {student.name} - Grade {student.grade}{" "}
+                        {presentToday.includes(student.id) && <span className="ml-2 text-green-600 text-xs">(Present Today)</span>}
                       </label>
                     </div>
                   ))}
@@ -341,7 +349,11 @@ export default function ChaptersTracking() {
 
               <Button
                 onClick={() => addChapterMutation.mutate()}
-                disabled={selectedStudentIds.length === 0 || (!selectedChapterId && (!subject || !chapterName)) || addChapterMutation.isPending}
+                disabled={
+                  selectedStudentIds.length === 0 ||
+                  (!selectedChapterId && (!subject || !chapterName)) ||
+                  addChapterMutation.isPending
+                }
                 className="w-full"
               >
                 Record Chapter for {selectedStudentIds.length} Student(s)
@@ -359,30 +371,50 @@ export default function ChaptersTracking() {
             <div className="flex-1">
               <Label>Filter by Subject</Label>
               <Select value={filterSubject} onValueChange={setFilterSubject}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Subjects</SelectItem>
-                  {subjects.map((subj) => <SelectItem key={subj} value={subj}>{subj}</SelectItem>)}
+                  {subjects.map((subj) => (
+                    <SelectItem key={subj} value={subj}>
+                      {subj}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
+
             <div className="flex-1">
               <Label>Filter by Student</Label>
               <Select value={filterStudent} onValueChange={setFilterStudent}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Students</SelectItem>
-                  {students.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                  {students.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
+
             <div className="flex-1">
               <Label>Filter by Grade</Label>
               <Select value={filterGrade} onValueChange={setFilterGrade}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Grades</SelectItem>
-                  {grades.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                  {grades.map((g) => (
+                    <SelectItem key={g} value={g}>
+                      {g}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -391,10 +423,7 @@ export default function ChaptersTracking() {
 
         <CardContent>
           <div className="space-y-4">
-            {chapters.length === 0 && (
-              <p className="text-muted-foreground text-center py-8">No chapters recorded yet</p>
-            )}
-
+            {chapters.length === 0 && <p className="text-muted-foreground text-center py-8">No chapters recorded yet</p>}
             {chapters.map((chapter: any) => {
               const isExpanded = expandedChapters[chapter.id] || false;
               return (
@@ -423,7 +452,10 @@ export default function ChaptersTracking() {
                       {isExpanded && (
                         <div className="flex flex-wrap gap-2 mt-2">
                           {chapter.student_chapters?.map((sc: any) => (
-                            <span key={sc.id} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                            <span
+                              key={sc.id}
+                              className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary"
+                            >
                               {sc.students?.name} - Grade {sc.students?.grade}
                             </span>
                           ))}
