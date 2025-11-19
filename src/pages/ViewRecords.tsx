@@ -26,7 +26,7 @@ interface AttendanceRecord {
 export default function ViewRecords() {
   const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [gradeFilter, setGradeFilter] = useState<string>("all"); // Added grade filter
+  const [gradeFilter, setGradeFilter] = useState<string>("all"); // Grade filter
   const dateStr = format(selectedDate, "yyyy-MM-dd");
 
   // Fetch students for this center
@@ -37,22 +37,20 @@ export default function ViewRecords() {
         .from('students')
         .select('id, name, grade')
         .order('name');
-      
-      // Filter by center_id if user is not admin
+
       if (user?.role !== 'admin' && user?.center_id) {
         query = query.eq('center_id', user.center_id);
       }
-      
+
       const { data, error } = await query;
       if (error) throw error;
       return data;
     },
   });
 
-  // Filter students by grade
   const filteredStudents = students.filter(s => gradeFilter === "all" || s.grade === gradeFilter);
 
-  // Fetch attendance records for the selected date and filtered students
+  // Fetch attendance records for selected date & filtered students
   const { data: records, isLoading } = useQuery({
     queryKey: ["attendance-records", dateStr, gradeFilter, user?.center_id],
     queryFn: async () => {
@@ -79,24 +77,16 @@ export default function ViewRecords() {
     enabled: filteredStudents.length > 0,
   });
 
-  const presentCount = records?.filter((r) => r.status === "Present").length || 0;
-  const absentCount = records?.filter((r) => r.status === "Absent").length || 0;
+  const presentCount = records?.filter(r => r.status === "Present").length || 0;
+  const absentCount = records?.filter(r => r.status === "Absent").length || 0;
 
   const exportToCSV = () => {
     if (!records || records.length === 0) return;
 
     const headers = ["Name", "Grade", "Status"];
-    const rows = records.map((record) => [
-      record.students.name,
-      record.students.grade,
-      record.status,
-    ]);
+    const rows = records.map(r => [r.students.name, r.students.grade, r.status]);
 
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((row) => row.join(",")),
-    ].join("\n");
-
+    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -112,65 +102,66 @@ export default function ViewRecords() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight">Attendance Records</h2>
-        <p className="text-muted-foreground">View past attendance records</p>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Attendance Records</h2>
+          <p className="text-muted-foreground">View past attendance records</p>
+        </div>
       </div>
 
-      {/* Grade Filter */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Filter by Grade</CardTitle>
-          <CardDescription>Select a grade to filter students</CardDescription>
-        </CardHeader>
-        <CardContent>
+      {/* Filters Row */}
+      <Card className="p-4">
+        <div className="flex flex-col md:flex-row gap-4 md:items-center">
+          {/* Grade Filter */}
           <Select value={gradeFilter} onValueChange={setGradeFilter}>
-            <SelectTrigger className="w-full md:w-[200px]">
-              <SelectValue placeholder="All Grades" />
+            <SelectTrigger className="w-full md:w-[180px]">
+              <SelectValue placeholder="Grade" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Grades</SelectItem>
-              {Array.from(new Set(students.map(s => s.grade))).map((g) => (
-                <SelectItem key={g} value={g}>
-                  {g}
-                </SelectItem>
+              {Array.from(new Set(students.map(s => s.grade))).map(g => (
+                <SelectItem key={g} value={g}>{g}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </CardContent>
-      </Card>
 
-      {/* Date Picker */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Select Date</CardTitle>
-          <CardDescription>Choose a date to view attendance records</CardDescription>
-        </CardHeader>
-        <CardContent>
+          {/* Date Picker */}
           <Popover>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
                 className={cn(
-                  "w-full justify-start text-left font-normal md:w-[280px]",
+                  "w-full md:w-[220px] justify-start text-left font-normal",
                   !selectedDate && "text-muted-foreground"
                 )}
               >
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
+                {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
               <Calendar
                 mode="single"
                 selected={selectedDate}
-                onSelect={(date) => date && setSelectedDate(date)}
+                onSelect={date => date && setSelectedDate(date)}
                 initialFocus
                 className="pointer-events-auto"
               />
             </PopoverContent>
           </Popover>
-        </CardContent>
+
+          {/* Export / Print */}
+          <div className="flex gap-2 ml-auto">
+            <Button variant="outline" size="sm" onClick={exportToCSV}>
+              <Download className="mr-2 h-4 w-4" />
+              Export CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={handlePrint}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print
+            </Button>
+          </div>
+        </div>
       </Card>
 
       {/* Attendance Table */}
@@ -183,23 +174,13 @@ export default function ViewRecords() {
                 {presentCount} Present • {absentCount} Absent
               </CardDescription>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={exportToCSV}>
-                <Download className="mr-2 h-4 w-4" />
-                Export CSV
-              </Button>
-              <Button variant="outline" size="sm" onClick={handlePrint}>
-                <Printer className="mr-2 h-4 w-4" />
-                Print
-              </Button>
-            </div>
           </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <p>Loading records...</p>
           ) : records && records.length > 0 ? (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-96 border rounded">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -209,20 +190,16 @@ export default function ViewRecords() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {records.map((record) => (
-                    <TableRow key={record.id}>
-                      <TableCell className="font-medium">{record.students.name}</TableCell>
-                      <TableCell>{record.students.grade}</TableCell>
+                  {records.map(r => (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-medium">{r.students.name}</TableCell>
+                      <TableCell>{r.students.grade}</TableCell>
                       <TableCell>
                         <Badge
-                          variant={record.status === "Present" ? "default" : "destructive"}
-                          className={
-                            record.status === "Present"
-                              ? "bg-secondary hover:bg-secondary/80"
-                              : ""
-                          }
+                          variant={r.status === "Present" ? "default" : "destructive"}
+                          className={r.status === "Present" ? "bg-secondary hover:bg-secondary/80" : ""}
                         >
-                          {record.status}
+                          {r.status}
                         </Badge>
                       </TableCell>
                     </TableRow>
