@@ -1,322 +1,500 @@
-import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { CalendarIcon, Download, Brain, Loader2, BookOpen, FileText } from "lucide-react";
+import { format, startOfMonth, endOfMonth } from "date-fns";
 import { toast } from "sonner";
-import { Trash2, Users, Plus, ChevronDown, ChevronUp } from "lucide-react";
-import { format } from "date-fns";
+import { Textarea } from "@/components/ui/textarea";
 
-export default function ChaptersTracking() {
+export default function StudentReport() {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
 
-  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
-  const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [subject, setSubject] = useState("");
-  const [chapterName, setChapterName] = useState("");
-  const [notes, setNotes] = useState("");
-  const [filterGrade, setFilterGrade] = useState("all");
-  const [selectedChapterId, setSelectedChapterId] = useState("");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
+  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
+  const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
+    from: startOfMonth(new Date()),
+    to: endOfMonth(new Date()),
+  });
+  const [subjectFilter, setSubjectFilter] = useState<string>("all");
+  const [gradeFilter, setGradeFilter] = useState<string>("all"); // Added grade filter
+  const [aiSummary, setAiSummary] = useState<string>("");
 
-  // Fetch students for the center
+  // Fetch students (center-specific)
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      if (!user?.center_id) return [];
-      const { data, error } = await supabase
-        .from("students")
-        .select("*")
-        .eq("center_id", user.center_id)
-        .order("name");
+      let query = supabase.from("students").select("*").order("name");
+      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
   });
 
-  // Present students for the selected date
-  const { data: presentToday = [] } = useQuery({
-    queryKey: ["present-students", date, user?.center_id],
+  // Filter students by grade
+  const filteredStudents = students.filter(s => gradeFilter === "all" || s.grade === gradeFilter);
+
+  // Fetch attendance
+  const { data: attendanceData = [] } = useQuery({
+    queryKey: ["student-attendance", selectedStudentId, dateRange],
     queryFn: async () => {
-      if (!user?.center_id) return [];
+      if (!selectedStudentId) return [];
       const { data, error } = await supabase
         .from("attendance")
-        .select("student_id")
-        .eq("date", date)
-        .eq("status", "Present")
-        .in("student_id", students.map(s => s.id));
+        .select("*")
+        .eq("student_id", selectedStudentId)
+        .gte("date", format(dateRange.from, "yyyy-MM-dd"))
+        .lte("date", format(dateRange.to, "yyyy-MM-dd"))
+        .order("date");
       if (error) throw error;
-      return data.map(d => d.student_id);
+      return data;
     },
+    enabled: !!selectedStudentId,
   });
 
-  // Auto-select present students filtered by grade
-  useEffect(() => {
-    if (!presentToday) return;
-    const filtered = students
-      .filter(s => (filterGrade === "all" || s.grade === filterGrade) && presentToday.includes(s.id))
-      .map(s => s.id);
-    setSelectedStudentIds(prev => Array.from(new Set([...prev, ...filtered])));
-  }, [presentToday, filterGrade, students]);
-
-  // Unique previous chapters for the center
-  const { data: uniqueChapters = [] } = useQuery({
-    queryKey: ["unique-chapters", user?.center_id],
+  // Fetch chapter progress
+  const { data: chapterProgress = [] } = useQuery({
+    queryKey: ["student-chapters", selectedStudentId, subjectFilter],
     queryFn: async () => {
-      if (!user?.center_id) return [];
-      const { data, error } = await supabase
-        .from("chapters")
-        .select("id, subject, chapter_name, student_chapters(student_id, students(center_id))");
+      if (!selectedStudentId) return [];
+      let query = supabase.from("student_chapters").select("*, chapters(*)").eq("student_id", selectedStudentId);
+      if (subjectFilter !== "all") query = query.eq("chapters.subject", subjectFilter);
+      const { data, error } = await query.order("date_completed", { ascending: false });
       if (error) throw error;
-      // Only chapters from this center
-      return data.filter(ch =>
-        ch.student_chapters?.some((sc: any) => sc.students.center_id === user.center_id)
-      );
+      return data;
     },
+    enabled: !!selectedStudentId,
   });
 
-  // All chapters for display table
-  const { data: chapters = [] } = useQuery({
-    queryKey: ["chapters", user?.center_id],
+  // Fetch all chapters (center-specific)
+  const { data: allChapters = [] } = useQuery({
+    queryKey: ["all-chapters", user?.center_id],
     queryFn: async () => {
-      if (!user?.center_id) return [];
-      const { data, error } = await supabase
-        .from("chapters")
-        .select("*, student_chapters(*, students(name, grade, center_id))")
-        .order("date_taught", { ascending: false });
+      let query = supabase.from("chapters").select("*");
+      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
+      const { data, error } = await query;
       if (error) throw error;
-      return data.filter(ch =>
-        ch.student_chapters?.some((sc: any) => sc.students.center_id === user.center_id)
-      );
+      return data;
     },
   });
 
-  const toggleStudentSelection = (id: string) => {
-    setSelectedStudentIds(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
-  };
-  const selectAllStudents = () => {
-    const filtered = students.filter(s => filterGrade === "all" || s.grade === filterGrade);
-    setSelectedStudentIds(filtered.map(s => s.id));
-  };
-  const deselectAllStudents = () => setSelectedStudentIds([]);
+  // Fetch test results
+  const { data: testResults = [] } = useQuery({
+    queryKey: ["student-test-results", selectedStudentId, subjectFilter],
+    queryFn: async () => {
+      if (!selectedStudentId) return [];
+      let query = supabase.from("test_results").select("*, tests(*)").eq("student_id", selectedStudentId);
+      if (subjectFilter !== "all") query = query.eq("tests.subject", subjectFilter);
+      const { data, error } = await query.order("date_taken", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!selectedStudentId,
+  });
 
-  const toggleChapterExpand = (id: string) => {
-    setExpandedChapters(prev => ({ ...prev, [id]: !prev[id] }));
-  };
+  // Statistics
+  const totalDays = attendanceData.length;
+  const presentDays = attendanceData.filter((a) => a.status === "Present").length;
+  const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
 
-  // Add chapter mutation with onConflict handling
-  const addChapterMutation = useMutation({
+  const totalTests = testResults.length;
+  const totalMarksObtained = testResults.reduce((sum, r) => sum + r.marks_obtained, 0);
+  const totalMaxMarks = testResults.reduce((sum, r) => sum + (r.tests?.total_marks || 0), 0);
+  const averagePercentage = totalMaxMarks > 0 ? Math.round((totalMarksObtained / totalMaxMarks) * 100) : 0;
+
+  const completedChaptersCount = chapterProgress.filter(cp => cp.completed).length;
+  const totalChaptersCount = allChapters.length;
+  const chapterCompletionPercentage = totalChaptersCount > 0
+    ? Math.round((completedChaptersCount / totalChaptersCount) * 100)
+    : 0;
+
+  const subjects = Array.from(new Set([
+    ...chapterProgress.map(c => c.chapters?.subject).filter(Boolean),
+    ...testResults.map(t => t.tests?.subject).filter(Boolean)
+  ]));
+
+  const selectedStudent = students.find((s) => s.id === selectedStudentId);
+
+  // AI Summary mutation
+  const generateSummaryMutation = useMutation({
     mutationFn: async () => {
-      let chapter_id: string;
-
-      if (selectedChapterId) {
-        // Previous chapter selected
-        chapter_id = selectedChapterId;
-      } else if (subject && chapterName) {
-        const { data: chapterData, error } = await supabase
-          .from("chapters")
-          .insert({ subject, chapter_name: chapterName, date_taught: date, notes: notes || null })
-          .select()
-          .single();
-        if (error) throw error;
-        chapter_id = chapterData.id;
-      } else {
-        throw new Error("Select previous chapter or create new one");
-      }
-
-      // Link students (allow multiple dates)
-      const studentChapters = selectedStudentIds.map(id => ({
-        student_id: id,
-        chapter_id,
-        completed: true,
-        date_completed: date
-      }));
-
-      const { error } = await supabase.from("student_chapters").insert(studentChapters, {
-        onConflict: ["student_id", "chapter_id", "date_completed"], // Prevent exact duplicate only
+      const { data, error } = await supabase.functions.invoke("ai-student-summary", {
+        body: { studentId: selectedStudentId },
       });
       if (error) throw error;
+      return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries(["chapters"]);
-      queryClient.invalidateQueries(["unique-chapters"]);
-      toast.success("Chapter recorded successfully");
-      setSelectedStudentIds([]);
-      setSubject("");
-      setChapterName("");
-      setNotes("");
-      setSelectedChapterId("");
-      setIsDialogOpen(false);
+    onSuccess: (data) => {
+      setAiSummary(data.summary);
+      toast.success("AI summary generated successfully");
     },
-    onError: (error: any) => toast.error(error.message || "Failed to record chapter"),
+    onError: (error: any) => {
+      console.error("Error generating summary:", error);
+      if (error.message?.includes("429")) toast.error("Rate limit exceeded");
+      else if (error.message?.includes("402")) toast.error("AI credits depleted");
+      else toast.error("Failed to generate AI summary");
+    },
   });
 
-  const deleteChapterMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("chapters").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(["chapters"]);
-      toast.success("Chapter deleted");
-    },
-    onError: () => toast.error("Failed to delete chapter"),
-  });
+  // Export CSV
+  const exportToCSV = () => {
+    if (!selectedStudent) return;
 
-  const grades = Array.from(new Set(students.map(s => s.grade)));
+    const csvContent = [
+      ["Student Report"],
+      ["Name", selectedStudent.name],
+      ["Grade", selectedStudent.grade],
+      [""],
+      ["Attendance Summary"],
+      ["Total Days", totalDays],
+      ["Present", presentDays],
+      ["Absent", totalDays - presentDays],
+      ["Percentage", attendancePercentage + "%"],
+      [""],
+      ["Test Results"],
+      ["Test Name", "Subject", "Marks Obtained", "Total Marks", "Date"],
+      ...testResults.map(r => [
+        r.tests?.name,
+        r.tests?.subject,
+        r.marks_obtained,
+        r.tests?.total_marks,
+        format(new Date(r.date_taken), "PPP")
+      ])
+    ].map(row => row.join(",")).join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${selectedStudent.name}_report.csv`;
+    a.click();
+  };
 
   return (
     <div className="space-y-6">
-      {/* Header + Dialog */}
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Chapter Tracking</h1>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="h-4 w-4 mr-2"/> Record Chapter</Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Record Chapter</DialogTitle>
-              <DialogDescription>Select previous chapter or create new one</DialogDescription>
-            </DialogHeader>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Student Report</h1>
+        {selectedStudentId && (
+          <Button onClick={exportToCSV} variant="outline">
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
+          </Button>
+        )}
+      </div>
 
-            <div className="space-y-4 py-4">
-              <div>
-                <Label>Date</Label>
-                <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
-              </div>
+      {/* Grade Filter */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Filter by Grade</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Select value={gradeFilter} onValueChange={setGradeFilter}>
+            <SelectTrigger className="w-full md:w-[200px]">
+              <SelectValue placeholder="Select grade" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Grades</SelectItem>
+              {Array.from(new Set(students.map(s => s.grade))).map((g) => (
+                <SelectItem key={g} value={g}>
+                  {g}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
 
-              {/* Previous chapters */}
-              <div className="space-y-3 border rounded-lg p-4">
-                <Label>Previous Chapters (Center Only)</Label>
-                <Select value={selectedChapterId} onValueChange={setSelectedChapterId}>
-                  <SelectTrigger><SelectValue placeholder="Choose..." /></SelectTrigger>
+      {/* Student Selector */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Select Student</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Choose a student" />
+            </SelectTrigger>
+            <SelectContent>
+              {filteredStudents.map((student) => (
+                <SelectItem key={student.id} value={student.id}>
+                  {student.name} - Grade {student.grade}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
+
+      {/* Sections visible only when student selected */}
+      {selectedStudent && (
+        <>
+          {/* Date Range & Subject Filter */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardContent className="pt-6">
+                <Label>Date Range</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="date"
+                    value={format(dateRange.from, "yyyy-MM-dd")}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, from: new Date(e.target.value) }))}
+                  />
+                  <Input
+                    type="date"
+                    value={format(dateRange.to, "yyyy-MM-dd")}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, to: new Date(e.target.value) }))}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-6">
+                <Label>Filter by Subject</Label>
+                <Select value={subjectFilter} onValueChange={setSubjectFilter}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {uniqueChapters.map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.subject} - {c.chapter_name}</SelectItem>
+                    <SelectItem value="all">All Subjects</SelectItem>
+                    {subjects.map((subject) => (
+                      <SelectItem key={subject} value={subject}>
+                        {subject}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center"><span className="w-full border-t"/></div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-background px-2 text-muted-foreground">Or</span>
-                </div>
-              </div>
-
-              {/* New chapter */}
-              <div className="space-y-3 border rounded-lg p-4">
-                <Label>Create New Chapter</Label>
-                <div className="grid grid-cols-2 gap-4">
-                  <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" />
-                  <Input value={chapterName} onChange={e => setChapterName(e.target.value)} placeholder="Chapter Name" />
-                </div>
-              </div>
-
-              <div>
-                <Label>Notes</Label>
-                <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Notes..." />
-              </div>
-
-              {/* Student selection */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <Label className="flex items-center gap-2"><Users className="h-4 w-4"/> Students ({selectedStudentIds.length})</Label>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={selectAllStudents}>Select All</Button>
-                    <Button size="sm" variant="outline" onClick={deselectAllStudents}>Deselect All</Button>
-                  </div>
-                </div>
-
-                <div className="mt-2">
-                  <Label>Filter by Grade</Label>
-                  <Select value={filterGrade} onValueChange={setFilterGrade}>
-                    <SelectTrigger><SelectValue placeholder="All Grades"/></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Grades</SelectItem>
-                      {grades.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="border rounded-lg p-2 max-h-48 overflow-y-auto">
-                  {students
-                    .filter(s => filterGrade === "all" || s.grade === filterGrade)
-                    .map(s => {
-                      const present = presentToday.includes(s.id);
-                      return (
-                        <div key={s.id} className={`flex items-center gap-2 p-1 rounded ${present ? "bg-green-100" : ""}`}>
-                          <Checkbox checked={selectedStudentIds.includes(s.id)} onCheckedChange={() => toggleStudentSelection(s.id)} id={s.id}/>
-                          <label htmlFor={s.id} className="text-sm">{s.name} - Grade {s.grade} {present && "(Present Today)"}</label>
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-
-              <Button
-                onClick={() => addChapterMutation.mutate()}
-                disabled={selectedStudentIds.length === 0 || (!selectedChapterId && (!subject || !chapterName))}
-                className="w-full"
-              >
-                Record Chapter
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Chapters Taught */}
-      <Card>
-        <CardHeader><CardTitle>Chapters Taught</CardTitle></CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {chapters.map(chapter => {
-              const expanded = expandedChapters[chapter.id] || false;
-              return (
-                <div key={chapter.id} className="border rounded-lg p-4">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-semibold">{chapter.chapter_name}</h3>
-                        <Button size="sm" variant="outline" onClick={() => toggleChapterExpand(chapter.id)}>
-                          {expanded ? <ChevronUp/> : <ChevronDown/>}
-                        </Button>
-                      </div>
-                      <p className="text-sm text-muted-foreground mb-2">{chapter.subject} | Date: {format(new Date(chapter.date_taught), "PPP")}</p>
-                      {chapter.notes && <p className="text-sm mb-2">{chapter.notes}</p>}
-                      {expanded && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {chapter.student_chapters.map((sc: any) => (
-                            <span key={sc.id} className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${presentToday.includes(sc.student_id) ? "bg-green-100 text-green-800" : "bg-primary/10 text-primary"}`}>
-                              {sc.students?.name} - Grade {sc.students?.grade} {presentToday.includes(sc.student_id) && "(Present)"}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <Button variant="ghost" size="sm" onClick={() => deleteChapterMutation.mutate(chapter.id)}>
-                      <Trash2 className="h-4 w-4"/>
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-            {chapters.length === 0 && <p className="text-muted-foreground text-center py-8">No chapters recorded yet</p>}
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Attendance Overview */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarIcon className="h-5 w-5" />
+                Attendance Overview
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-4 mb-6">
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Total Days</p>
+                  <p className="text-2xl font-bold">{totalDays}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Present</p>
+                  <p className="text-2xl font-bold text-green-600">{presentDays}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Absent</p>
+                  <p className="text-2xl font-bold text-red-600">{totalDays - presentDays}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Attendance %</p>
+                  <p className="text-2xl font-bold">{attendancePercentage}%</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-semibold">Recent Attendance</h4>
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full">
+                    <thead className="bg-muted">
+                      <tr>
+                        <th className="px-4 py-2 text-left">Date</th>
+                        <th className="px-4 py-2 text-left">Status</th>
+                        <th className="px-4 py-2 text-left">Time In</th>
+                        <th className="px-4 py-2 text-left">Time Out</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {attendanceData.slice(0, 10).map((record) => (
+                        <tr key={record.id} className="border-t">
+                          <td className="px-4 py-2">{format(new Date(record.date), "PPP")}</td>
+                          <td className="px-4 py-2">
+                            <span
+                              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                record.status === "Present"
+                                  ? "bg-green-100 text-green-800"
+                                  : "bg-red-100 text-red-800"
+                              }`}
+                            >
+                              {record.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2">{record.time_in || "-"}</td>
+                          <td className="px-4 py-2">{record.time_out || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Chapter Progress */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BookOpen className="h-5 w-5" />
+                Chapter Progress
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-3 mb-4">
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Total Chapters</p>
+                    <p className="text-2xl font-bold">{totalChaptersCount}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Completed</p>
+                    <p className="text-2xl font-bold text-green-600">{completedChaptersCount}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Progress</p>
+                    <p className="text-2xl font-bold">{chapterCompletionPercentage}%</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {chapterProgress.map((progress) => (
+                    <div
+                      key={progress.id}
+                      className="flex items-center justify-between p-3 border rounded-lg"
+                    >
+                      <div className="flex-1">
+                        <p className="font-medium">{progress.chapters?.chapter_name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {progress.chapters?.subject} • {format(new Date(progress.date_completed), "PPP")}
+                        </p>
+                      </div>
+                      <div
+                        className={`px-3 py-1 rounded-full text-xs font-medium ${
+                          progress.completed ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"
+                        }`}
+                      >
+                        {progress.completed ? "Completed" : "In Progress"}
+                      </div>
+                    </div>
+                  ))}
+                  {chapterProgress.length === 0 && (
+                    <p className="text-muted-foreground text-center py-8">
+                      No chapters recorded yet
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Test Results */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Test Results
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-3 mb-6">
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Total Tests</p>
+                  <p className="text-2xl font-bold">{totalTests}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Average Score</p>
+                  <p className="text-2xl font-bold">{averagePercentage}%</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Total Marks</p>
+                  <p className="text-2xl font-bold">
+                    {totalMarksObtained}/{totalMaxMarks}
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {testResults.map((result) => (
+                  <div
+                    key={result.id}
+                    className="flex items-center justify-between p-4 border rounded-lg"
+                  >
+                    <div className="flex-1">
+                      <p className="font-medium">{result.tests?.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {result.tests?.subject} • {format(new Date(result.date_taken), "PPP")}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-bold">
+                        {result.marks_obtained}/{result.tests?.total_marks}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {Math.round((result.marks_obtained / (result.tests?.total_marks || 1)) * 100)}%
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {testResults.length === 0 && (
+                  <p className="text-muted-foreground text-center py-8">
+                    No test results recorded yet
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* AI Summary */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Brain className="h-5 w-5" />
+                  AI Performance Summary
+                </CardTitle>
+                <Button
+                  onClick={() => generateSummaryMutation.mutate()}
+                  disabled={generateSummaryMutation.isPending}
+                  size="sm"
+                >
+                  {generateSummaryMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Brain className="mr-2 h-4 w-4" />
+                      Generate AI Summary
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {aiSummary ? (
+                <Textarea
+                  value={aiSummary}
+                  onChange={(e) => setAiSummary(e.target.value)}
+                  rows={12}
+                  className="resize-none"
+                />
+              ) : (
+                <p className="text-muted-foreground text-center py-8">
+                  Click "Generate AI Summary" to get AI-powered insights about this student's performance
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }
